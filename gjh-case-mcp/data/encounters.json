@@ -1,0 +1,17 @@
+[
+  {
+    "resourceType": "Encounter",
+    "id": "b52394ec-c6b6-46aa-abf3-4b1943ea3d56",
+    "status": "in-progress",
+    "subject": {
+      "reference": "Patient/${data.patientId}"
+    },
+    "reasonCode": [
+      "Fever and headache"
+    ],
+    "observations": [],
+    "clinicalImpression": {},
+    "medicationRequest": [],
+    "createdAt": "2026-03-09T20:12:29.156Z"
+  }
+]
