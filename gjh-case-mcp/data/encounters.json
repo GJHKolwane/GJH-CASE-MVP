@@ -13,5 +13,20 @@
     "clinicalImpression": {},
     "medicationRequest": [],
     "createdAt": "2026-03-09T20:12:29.156Z"
+  },
+  {
+    "resourceType": "Encounter",
+    "id": "c3e050b3-cdc5-4eee-99f2-5c89bb3eb430",
+    "status": "in-progress",
+    "subject": {
+      "reference": "Patient/${data.patientId}"
+    },
+    "reasonCode": [
+      "Follow-up test"
+    ],
+    "observations": [],
+    "clinicalImpression": {},
+    "medicationRequest": [],
+    "createdAt": "2026-03-09T20:22:57.017Z"
   }
 ]
