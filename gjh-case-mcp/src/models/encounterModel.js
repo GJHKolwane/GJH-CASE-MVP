@@ -8,49 +8,57 @@ const encounters = await readEncounters();
 const encounter = {
 resourceType: "Encounter",
 id: uuidv4(),
+
 status: "in-progress",
+
 subject: {
-reference: "Patient/${data.patientId}"
-},
-reasonCode: data.reasonCode || [],
-observations: [],
-clinicalImpression: {},
-medicationRequest: [],
-createdAt: new Date()
-};
+  reference: "Patient/" + data.patientId
+  },
 
-encounters.push(encounter);
+  reasonCode: data.reasonCode || [],
 
-await writeEncounters(encounters);
+  observations: [],
 
-return encounter;
-};
+  clinicalImpression: {},
 
-export const getEncounters = async () => {
+  medicationRequest: [],
 
-return await readEncounters();
+  createdAt: new Date()
 
-};
+  };
 
-export const getEncounterById = async (id) => {
+  encounters.push(encounter);
 
-const encounters = await readEncounters();
+  await writeEncounters(encounters);
 
-return encounters.find(e => e.id === id);
+  return encounter;
+  };
 
-};
+  export const getEncounters = async () => {
+  return await readEncounters();
+  };
 
-export const updateEncounter = async (id, updates) => {
+  export const getEncounterById = async (id) => {
 
-const encounters = await readEncounters();
+  const encounters = await readEncounters();
 
-const index = encounters.findIndex(e => e.id === id);
+  return encounters.find(e => e.id === id);
+  };
 
-if (index === -1) return null;
+  export const updateEncounter = async (id, updates) => {
 
-encounters[index] = { ...encounters[index], ...updates };
+  const encounters = await readEncounters();
 
-await writeEncounters(encounters);
+  const index = encounters.findIndex(e => e.id === id);
 
-return encounters[index];
-};
+  if (index === -1) return null;
+
+  encounters[index] = {
+  ...encounters[index],
+  ...updates
+  };
+
+  await writeEncounters(encounters);
+
+  return encounters[index];
+  };

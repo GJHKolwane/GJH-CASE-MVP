@@ -1,0 +1,16 @@
+{
+  "name": "gjh-case-mvp",
+  "version": "1.0.0",
+  "description": "GJHealth Case MCP",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+  "start": "node src/server.js"
+  },
+  "dependencies": {
+  "cors": "^2.8.5",
+  "express": "^4.19.2",
+  "fs-extra": "^11.2.0",
+  "uuid": "^9.0.1"
+  }
+  }
