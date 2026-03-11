@@ -1,25 +1,50 @@
-import { generateId } from "../utils/idGenerator.js";
-import { getDB } from "../database/db.js";
+import fs from "fs";
+import path from "path";
 
-export async function recordNotesHandler(req, res) {
+export async function createNotesHandler(req, res) {
 
-  const { id } = req.params;
-    const { text, author } = req.body;
+  try {
 
-      const db = await getDB();
+      const encounterId = req.params.id;
+          const notes = req.body;
 
-        const event = {
-            id: generateId("note"),
-                encounterId: id,
-                    text,
-                        author,
-                            timestamp: new Date().toISOString()
-                              };
+              const eventsDir = path.join("data", "events", encounterId);
 
-                                db.notes.push(event);
+                  if (!fs.existsSync(eventsDir)) {
+                        fs.mkdirSync(eventsDir, { recursive: true });
+                            }
 
-                                  await db.write();
+                                const file = path.join(eventsDir, "notes.json");
 
-                                    res.status(201).json(event);
+                                    let records = [];
 
-                                    }
+                                        if (fs.existsSync(file)) {
+                                              records = JSON.parse(fs.readFileSync(file));
+                                                  }
+
+                                                      const record = {
+                                                            ...notes,
+                                                                  createdAt: new Date().toISOString()
+                                                                      };
+
+                                                                          records.push(record);
+
+                                                                              fs.writeFileSync(file, JSON.stringify(records, null, 2));
+
+                                                                                  res.json({
+                                                                                        status: "stored",
+                                                                                              encounterId,
+                                                                                                    notes: record
+                                                                                                        });
+
+                                                                                                          } catch (err) {
+
+                                                                                                              console.error("Notes error:", err);
+
+                                                                                                                  res.status(500).json({
+                                                                                                                        error: "Failed to store notes"
+                                                                                                                            });
+
+                                                                                                                              }
+
+                                                                                                                              }
