@@ -26,8 +26,29 @@ APP SETUP
 
 const app = express();
 
+/*
+Allow requests from dashboard and orchestrator
+*/
 app.use(cors());
+
+/*
+Parse JSON body
+*/
 app.use(express.json());
+
+/*
+==============================
+HEALTH CHECK
+==============================
+*/
+
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    status: "ok",
+    service: "gjh-case-service",
+    timestamp: new Date().toISOString()
+  });
+});
 
 /*
 ==============================
@@ -58,10 +79,10 @@ SERVER
 ==============================
 */
 
-const PORT = 5050;
+const PORT = process.env.PORT || 5050;
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
 
-  console.log(`GJH Case MCP running on port ${PORT}`);
+  console.log(`🚀 GJH Case MCP running on port ${PORT}`);
 
-  });
+});
