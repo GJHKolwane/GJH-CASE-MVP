@@ -15,50 +15,73 @@ subject: {
   reference: "Patient/" + data.patientId
   },
 
-  reasonCode: data.reasonCode || [],
+  vitals: {
+    temperature: "",
+      bloodPressure: "",
+        heartRate: "",
+          respiratoryRate: "",
+            oxygenSaturation: ""
+            },
 
-  observations: [],
+            symptoms: [],
 
-  clinicalImpression: {},
+            notes: "",
 
-  medicationRequest: [],
+            soan: {
+              subjective: "",
+                objective: "",
+                  assessment: "",
+                    nextSteps: ""
+                    },
 
-  createdAt: new Date()
+                    triage: {
+                      riskLevel: "",
+                        aiRecommendation: ""
+                        },
 
-  };
+                        escalation: {
+                          required: false,
+                            doctorId: null
+                            },
 
-  encounters.push(encounter);
+                            prescription: [],
 
-  await writeEncounters(encounters);
+                            createdAt: new Date()
 
-  return encounter;
-  };
+                            };
 
-  export const getEncounters = async () => {
-  return await readEncounters();
-  };
+                            encounters.push(encounter);
 
-  export const getEncounterById = async (id) => {
+                            await writeEncounters(encounters);
 
-  const encounters = await readEncounters();
+                            return encounter;
+                            };
 
-  return encounters.find(e => e.id === id);
-  };
+                            export const getEncounters = async () => {
+                            return await readEncounters();
+                            };
 
-  export const updateEncounter = async (id, updates) => {
+                            export const getEncounterById = async (id) => {
 
-  const encounters = await readEncounters();
+                            const encounters = await readEncounters();
 
-  const index = encounters.findIndex(e => e.id === id);
+                            return encounters.find(e => e.id === id);
+                            };
 
-  if (index === -1) return null;
+                            export const updateEncounter = async (id, updates) => {
 
-  encounters[index] = {
-  ...encounters[index],
-  ...updates
-  };
+                            const encounters = await readEncounters();
 
-  await writeEncounters(encounters);
+                            const index = encounters.findIndex(e => e.id === id);
 
-  return encounters[index];
-  };
+                            if (index === -1) return null;
+
+                            encounters[index] = {
+                            ...encounters[index],
+                            ...updates
+                            };
+
+                            await writeEncounters(encounters);
+
+                            return encounters[index];
+                            };

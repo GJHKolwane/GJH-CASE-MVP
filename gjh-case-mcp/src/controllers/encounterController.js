@@ -1,46 +1,148 @@
-import {
-    createEncounter,
-    getEncounters,
-    getEncounterById,
-    updateEncounter
-    } from "../models/encounterModel.js";
+import fs from "fs/promises";
+import path from "path";
 
-    export const createEncounterHandler = async (req, res) => {
+import { getDB } from "../database/db.js";
 
-    const encounter = await createEncounter(req.body);
+/*
+====================================================
+HELPER — READ EVENT FILE SAFELY
+====================================================
+*/
 
-    res.json(encounter);
+async function readEventFile(filePath) {
+  try {
+      const raw = await fs.readFile(filePath);
+          return JSON.parse(raw);
+            } catch {
+                return [];
+                  }
+                  }
 
-    };
+                  /*
+                  ====================================================
+                  CREATE ENCOUNTER
+                  ====================================================
+                  */
 
-    export const getEncountersHandler = async (req, res) => {
+                  export async function createEncounterHandler(req, res) {
+                    const db = await getDB();
 
-    const encounters = await getEncounters();
+                      const { patientId } = req.body;
 
-    res.json(encounters);
+                        if (!patientId) {
+                            return res.status(400).json({
+                                  error: "patientId required"
+                                      });
+                                        }
 
-    };
+                                          const encounter = {
+                                              id: `enc_${Date.now()}`,
+                                                  patientId,
+                                                      status: "active",
+                                                          createdAt: new Date().toISOString()
+                                                            };
 
-    export const getEncounterHandler = async (req, res) => {
+                                                              db.encounters.push(encounter);
 
-    const encounter = await getEncounterById(req.params.id);
+                                                                await db.write();
 
-    if (!encounter) {
-    return res.status(404).json({ error: "Encounter not found" });
-    }
+                                                                  res.status(201).json(encounter);
+                                                                  }
 
-    res.json(encounter);
+                                                                  /*
+                                                                  ====================================================
+                                                                  GET ALL ENCOUNTERS
+                                                                  ====================================================
+                                                                  */
 
-    };
+                                                                  export async function getEncountersHandler(req, res) {
+                                                                    const db = await getDB();
+                                                                      res.json(db.encounters);
+                                                                      }
 
-    export const updateEncounterHandler = async (req, res) => {
+                                                                      /*
+                                                                      ====================================================
+                                                                      GET SINGLE ENCOUNTER
+                                                                      ====================================================
+                                                                      */
 
-    const encounter = await updateEncounter(req.params.id, req.body);
+                                                                      export async function getEncounterHandler(req, res) {
+                                                                        const { id } = req.params;
 
-    if (!encounter) {
-    return res.status(404).json({ error: "Encounter not found" });
-    }
+                                                                          const db = await getDB();
 
-    res.json(encounter);
+                                                                            const encounter = db.encounters.find(e => e.id === id);
 
-    };
+                                                                              if (!encounter) {
+                                                                                  return res.status(404).json({
+                                                                                        error: "Encounter not found"
+                                                                                            });
+                                                                                              }
+
+                                                                                                res.json(encounter);
+                                                                                                }
+
+                                                                                                /*
+                                                                                                ====================================================
+                                                                                                TIMELINE ENDPOINT
+                                                                                                ====================================================
+                                                                                                GET /encounters/:id/timeline
+                                                                                                ====================================================
+                                                                                                */
+
+                                                                                                export async function getEncounterTimelineHandler(req, res) {
+
+                                                                                                  const { id } = req.params;
+
+                                                                                                    const db = await getDB();
+
+                                                                                                      const encounter = db.encounters.find(e => e.id === id);
+
+                                                                                                        if (!encounter) {
+                                                                                                            return res.status(404).json({
+                                                                                                                  error: "Encounter not found"
+                                                                                                                      });
+                                                                                                                        }
+
+                                                                                                                          const patient = db.patients.find(p => p.id === encounter.patientId);
+
+                                                                                                                            const eventFolder = path.join("data", "events", id);
+
+                                                                                                                              const vitals = await readEventFile(
+                                                                                                                                  path.join(eventFolder, "vitals.json")
+                                                                                                                                    );
+
+                                                                                                                                      const symptoms = await readEventFile(
+                                                                                                                                          path.join(eventFolder, "symptoms.json")
+                                                                                                                                            );
+
+                                                                                                                                              const notes = await readEventFile(
+                                                                                                                                                  path.join(eventFolder, "notes.json")
+                                                                                                                                                    );
+
+                                                                                                                                                      const triage = await readEventFile(
+                                                                                                                                                          path.join(eventFolder, "triage.json")
+                                                                                                                                                            );
+
+                                                                                                                                                              const soan = await readEventFile(
+                                                                                                                                                                  path.join(eventFolder, "soan.json")
+                                                                                                                                                                    );
+
+                                                                                                                                                                      const prescriptions = await readEventFile(
+                                                                                                                                                                          path.join(eventFolder, "prescriptions.json")
+                                                                                                                                                                            );
+
+                                                                                                                                                                              res.json({
+                                                                                                                                                                                  patient,
+                                                                                                                                                                                      encounter,
+                                                                                                                                                                                          timeline: {
+                                                                                                                                                                                                vitals,
+                                                                                                                                                                                                      symptoms,
+                                                                                                                                                                                                            notes,
+                                                                                                                                                                                                                  triage,
+                                                                                                                                                                                                                        soan,
+                                                                                                                                                                                                                              prescriptions
+                                                                                                                                                                                                                                  }
+                                                                                                                                                                                                                                    });
+
+                                                                                                                                                                                                                                    }

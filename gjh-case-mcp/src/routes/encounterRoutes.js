@@ -1,19 +1,42 @@
 import express from "express";
+
 import {
-createEncounterHandler,
-getEncountersHandler,
-getEncounterHandler,
-updateEncounterHandler
-} from "../controllers/encounterController.js";
+  createEncounterHandler,
+    getEncountersHandler,
+      getEncounterHandler,
+        getEncounterTimelineHandler
+        } from "../controllers/encounterController.js";
 
-const router = express.Router();
+        import { recordVitalsHandler } from "../controllers/vitalsController.js";
+        import { recordSymptomsHandler } from "../controllers/symptomsController.js";
+        import { recordNotesHandler } from "../controllers/notesController.js";
 
-router.post("/", createEncounterHandler);
+        const router = express.Router();
 
-router.get("/", getEncountersHandler);
+        /*
+        =====================================
+        ENCOUNTER LIFECYCLE
+        =====================================
+        */
 
-router.get("/:id", getEncounterHandler);
+        router.post("/", createEncounterHandler);
 
-router.patch("/:id", updateEncounterHandler);
+        router.get("/", getEncountersHandler);
 
-export default router;
+        router.get("/:id", getEncounterHandler);
+
+        router.get("/:id/timeline", getEncounterTimelineHandler);
+
+        /*
+        =====================================
+        CLINICAL EVENTS
+        =====================================
+        */
+
+        router.post("/:id/vitals", recordVitalsHandler);
+
+        router.post("/:id/symptoms", recordSymptomsHandler);
+
+        router.post("/:id/notes", recordNotesHandler);
+
+        export default router;
