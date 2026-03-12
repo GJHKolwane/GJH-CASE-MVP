@@ -1,87 +1,160 @@
 import { v4 as uuidv4 } from "uuid";
 import { readEncounters, writeEncounters } from "../database/db.js";
 
+/*
+================================================
+CREATE ENCOUNTER
+================================================
+*/
+
 export const createEncounter = async (data) => {
 
-const encounters = await readEncounters();
+  const encounters = await readEncounters();
 
-const encounter = {
-resourceType: "Encounter",
-id: uuidv4(),
+  const encounter = {
 
-status: "in-progress",
+    resourceType: "Encounter",
+    id: uuidv4(),
 
-subject: {
-  reference: "Patient/" + data.patientId
-  },
+    status: "in-progress",
 
-  vitals: {
-    temperature: "",
+    subject: {
+      reference: "Patient/" + data.patientId
+    },
+
+    vitals: {
+      temperature: "",
       bloodPressure: "",
-        heartRate: "",
-          respiratoryRate: "",
-            oxygenSaturation: ""
-            },
+      heartRate: "",
+      respiratoryRate: "",
+      oxygenSaturation: ""
+    },
 
-            symptoms: [],
+    symptoms: [],
 
-            notes: "",
+    notes: "",
 
-            soan: {
-              subjective: "",
-                objective: "",
-                  assessment: "",
-                    nextSteps: ""
-                    },
+    /*
+    =================================================
+    DOCTOR NOTES (NEW)
+    =================================================
+    */
 
-                    triage: {
-                      riskLevel: "",
-                        aiRecommendation: ""
-                        },
+    doctorNotes: [],
 
-                        escalation: {
-                          required: false,
-                            doctorId: null
-                            },
+    /*
+    =================================================
+    SOAN STRUCTURE
+    =================================================
+    */
 
-                            prescription: [],
+    soan: {
+      subjective: "",
+      objective: "",
+      assessment: "",
+      nextSteps: ""
+    },
 
-                            createdAt: new Date()
+    /*
+    =================================================
+    AI TRIAGE
+    =================================================
+    */
 
-                            };
+    triage: {
+      riskLevel: "",
+      aiRecommendation: ""
+    },
 
-                            encounters.push(encounter);
+    /*
+    =================================================
+    ESCALATION
+    =================================================
+    */
 
-                            await writeEncounters(encounters);
+    escalation: {
+      required: false,
+      doctorId: null
+    },
 
-                            return encounter;
-                            };
+    /*
+    =================================================
+    TREATMENT DECISION (NEW)
+    =================================================
+    */
 
-                            export const getEncounters = async () => {
-                            return await readEncounters();
-                            };
+    treatmentDecision: {
+      decision: "",
+      recordedAt: null
+    },
 
-                            export const getEncounterById = async (id) => {
+    /*
+    =================================================
+    PRESCRIPTIONS
+    =================================================
+    */
 
-                            const encounters = await readEncounters();
+    prescription: [],
 
-                            return encounters.find(e => e.id === id);
-                            };
+    createdAt: new Date()
 
-                            export const updateEncounter = async (id, updates) => {
+  };
 
-                            const encounters = await readEncounters();
+  encounters.push(encounter);
 
-                            const index = encounters.findIndex(e => e.id === id);
+  await writeEncounters(encounters);
 
-                            if (index === -1) return null;
+  return encounter;
 
-                            encounters[index] = {
-                            ...encounters[index],
-                            ...updates
-                            };
+};
 
-                            await writeEncounters(encounters);
+/*
+================================================
+GET ALL ENCOUNTERS
+================================================
+*/
 
-                            return encounters[index];
-                            };
+export const getEncounters = async () => {
+
+  return await readEncounters();
+
+};
+
+/*
+================================================
+GET ENCOUNTER BY ID
+================================================
+*/
+
+export const getEncounterById = async (id) => {
+
+  const encounters = await readEncounters();
+
+  return encounters.find(e => e.id === id);
+
+};
+
+/*
+================================================
+UPDATE ENCOUNTER
+================================================
+*/
+
+export const updateEncounter = async (id, updates) => {
+
+  const encounters = await readEncounters();
+
+  const index = encounters.findIndex(e => e.id === id);
+
+  if (index === -1) return null;
+
+  encounters[index] = {
+    ...encounters[index],
+    ...updates
+  };
+
+  await writeEncounters(encounters);
+
+  return encounters[index];
+
+};
