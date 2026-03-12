@@ -16,6 +16,14 @@ export const createEncounter = async (data) => {
     resourceType: "Encounter",
     id: uuidv4(),
 
+    /*
+    ================================================
+    STATE MACHINE
+    ================================================
+    */
+
+    state: "created",
+
     status: "in-progress",
 
     subject: {
@@ -34,19 +42,10 @@ export const createEncounter = async (data) => {
 
     notes: "",
 
-    /*
-    =================================================
-    DOCTOR NOTES (NEW)
-    =================================================
-    */
-
-    doctorNotes: [],
-
-    /*
-    =================================================
-    SOAN STRUCTURE
-    =================================================
-    */
+    triage: {
+      riskLevel: "",
+      aiRecommendation: ""
+    },
 
     soan: {
       subjective: "",
@@ -55,44 +54,17 @@ export const createEncounter = async (data) => {
       nextSteps: ""
     },
 
-    /*
-    =================================================
-    AI TRIAGE
-    =================================================
-    */
-
-    triage: {
-      riskLevel: "",
-      aiRecommendation: ""
-    },
-
-    /*
-    =================================================
-    ESCALATION
-    =================================================
-    */
-
     escalation: {
       required: false,
       doctorId: null
     },
 
-    /*
-    =================================================
-    TREATMENT DECISION (NEW)
-    =================================================
-    */
+    doctorNotes: [],
 
     treatmentDecision: {
       decision: "",
       recordedAt: null
     },
-
-    /*
-    =================================================
-    PRESCRIPTIONS
-    =================================================
-    */
 
     prescription: [],
 
@@ -110,14 +82,12 @@ export const createEncounter = async (data) => {
 
 /*
 ================================================
-GET ALL ENCOUNTERS
+GET ENCOUNTERS
 ================================================
 */
 
 export const getEncounters = async () => {
-
   return await readEncounters();
-
 };
 
 /*
