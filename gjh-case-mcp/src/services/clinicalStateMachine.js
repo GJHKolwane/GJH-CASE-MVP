@@ -2,6 +2,7 @@
 ================================================
 CLINICAL STATE MACHINE
 ================================================
+Controls allowed encounter workflow transitions
 */
 
 const transitions = {
