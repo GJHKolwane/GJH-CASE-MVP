@@ -17,6 +17,7 @@ import notesRoutes from "./routes/notesRoutes.js";
 import triageRoutes from "./routes/triageRoutes.js";
 import soanRoutes from "./routes/soanRoutes.js";
 import prescriptionRoutes from "./routes/prescriptionRoutes.js";
+import doctorNotesRoutes from "./routes/doctorNotesRoutes.js";
 
 /*
 ==============================
@@ -26,29 +27,8 @@ APP SETUP
 
 const app = express();
 
-/*
-Allow requests from dashboard and orchestrator
-*/
 app.use(cors());
-
-/*
-Parse JSON body
-*/
 app.use(express.json());
-
-/*
-==============================
-HEALTH CHECK
-==============================
-*/
-
-app.get("/health", (req, res) => {
-  res.status(200).json({
-    status: "ok",
-    service: "gjh-case-service",
-    timestamp: new Date().toISOString()
-  });
-});
 
 /*
 ==============================
@@ -71,6 +51,7 @@ app.use("/encounters", notesRoutes);
 
 app.use("/encounters", triageRoutes);
 app.use("/encounters", soanRoutes);
+app.use("/encounters", doctorNotesRoutes);
 app.use("/encounters", prescriptionRoutes);
 
 /*
@@ -79,10 +60,10 @@ SERVER
 ==============================
 */
 
-const PORT = process.env.PORT || 5050;
+const PORT = 5050;
 
-app.listen(PORT, "0.0.0.0", () => {
+app.listen(PORT, () => {
 
-  console.log(`🚀 GJH Case MCP running on port ${PORT}`);
+  console.log(`GJH Case MCP running on port ${PORT}`);
 
 });
