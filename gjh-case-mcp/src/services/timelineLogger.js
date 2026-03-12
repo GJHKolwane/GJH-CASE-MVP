@@ -2,6 +2,7 @@
 ================================================
 TIMELINE EVENT LOGGER
 ================================================
+Adds immutable events to the encounter history
 */
 
 export function addTimelineEvent(encounter, eventType, payload = {}) {
