@@ -1,12 +1,6 @@
 import express from "express";
 import cors from "cors";
 
-/*
-==============================
-ROUTES
-==============================
-*/
-
 import patientRoutes from "./routes/patientRoutes.js";
 import encounterRoutes from "./routes/encounterRoutes.js";
 
@@ -16,34 +10,18 @@ import notesRoutes from "./routes/notesRoutes.js";
 
 import triageRoutes from "./routes/triageRoutes.js";
 import soanRoutes from "./routes/soanRoutes.js";
+import doctorSoanRoutes from "./routes/doctorSoanRoutes.js";
+
 import prescriptionRoutes from "./routes/prescriptionRoutes.js";
 import doctorNotesRoutes from "./routes/doctorNotesRoutes.js";
-
-/*
-==============================
-APP SETUP
-==============================
-*/
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-/*
-==============================
-CORE RESOURCES
-==============================
-*/
-
 app.use("/patients", patientRoutes);
 app.use("/encounters", encounterRoutes);
-
-/*
-==============================
-CLINICAL EVENTS
-==============================
-*/
 
 app.use("/encounters", vitalsRoutes);
 app.use("/encounters", symptomsRoutes);
@@ -51,14 +29,10 @@ app.use("/encounters", notesRoutes);
 
 app.use("/encounters", triageRoutes);
 app.use("/encounters", soanRoutes);
+app.use("/encounters", doctorSoanRoutes);
+
 app.use("/encounters", doctorNotesRoutes);
 app.use("/encounters", prescriptionRoutes);
-
-/*
-==============================
-SERVER
-==============================
-*/
 
 const PORT = 5050;
 
