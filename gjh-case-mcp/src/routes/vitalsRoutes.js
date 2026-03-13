@@ -1,12 +1,14 @@
 import express from "express";
-import { createVitalsHandler } from "../controllers/vitalsController.js";
+import { recordVitals } from "../controllers/vitalsController.js";
 
 const router = express.Router();
 
 /*
-POST /encounters/:id/vitals
+====================================
+Record patient vitals
+====================================
 */
 
-router.post("/:id/vitals", createVitalsHandler);
+router.post("/:id/vitals", recordVitals);
 
 export default router;
