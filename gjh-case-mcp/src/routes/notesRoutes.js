@@ -1,8 +1,14 @@
 import express from "express";
-import { createNotesHandler } from "../controllers/notesController.js";
+import { recordNotes } from "../controllers/notesController.js";
 
 const router = express.Router();
 
-router.post("/:id/notes", createNotesHandler);
+/*
+====================================
+Record nurse clinical notes
+====================================
+*/
+
+router.post("/:id/notes", recordNotes);
 
 export default router;
