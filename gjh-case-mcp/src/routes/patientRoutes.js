@@ -1,11 +1,17 @@
 import express from "express";
 import {
-createPatientHandler,
-getPatientsHandler,
-getPatientHandler
+  createPatientHandler,
+  getPatientsHandler,
+  getPatientHandler
 } from "../controllers/patientController.js";
 
 const router = express.Router();
+
+/*
+=========================================
+PATIENT ROUTES
+=========================================
+*/
 
 router.post("/", createPatientHandler);
 
