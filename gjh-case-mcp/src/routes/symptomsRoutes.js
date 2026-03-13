@@ -1,8 +1,14 @@
 import express from "express";
-import { createSymptomsHandler } from "../controllers/symptomsController.js";
+import { recordSymptoms } from "../controllers/symptomsController.js";
 
 const router = express.Router();
 
-router.post("/:id/symptoms", createSymptomsHandler);
+/*
+====================================
+Record patient symptoms
+====================================
+*/
+
+router.post("/:id/symptoms", recordSymptoms);
 
 export default router;
