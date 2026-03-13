@@ -16,9 +16,12 @@ import notesRoutes from "./routes/notesRoutes.js";
 
 import triageRoutes from "./routes/triageRoutes.js";
 
-import soanRoutes from "./routes/soanRoutes.js";          // Nurse SOAN
+import soanRoutes from "./routes/soanRoutes.js"; // Nurse SOAN
+
 import doctorNotesRoutes from "./routes/doctorNotesRoutes.js";
 import doctorSoanRoutes from "./routes/doctorSoanRoutes.js";
+
+import treatmentDecisionRoutes from "./routes/treatmentDecisionRoutes.js";
 
 import prescriptionRoutes from "./routes/prescriptionRoutes.js";
 
@@ -63,6 +66,14 @@ DOCTOR WORKFLOW
 
 app.use("/encounters", doctorNotesRoutes);
 app.use("/encounters", doctorSoanRoutes);
+
+/*
+=========================================
+TREATMENT DECISION
+=========================================
+*/
+
+app.use("/encounters", treatmentDecisionRoutes);
 
 /*
 =========================================
