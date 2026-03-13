@@ -1,8 +1,14 @@
 import express from "express";
-import { generateDoctorSOAN } from "../controllers/doctorSoanController.js";
+import { createDoctorSOANHandler } from "../controllers/doctorSoanController.js";
 
 const router = express.Router();
 
-router.post("/:id/doctor-soan", generateDoctorSOAN);
+/*
+=========================================
+POST /encounters/:id/doctor-soan
+=========================================
+*/
+
+router.post("/:id/doctor-soan", createDoctorSOANHandler);
 
 export default router;
