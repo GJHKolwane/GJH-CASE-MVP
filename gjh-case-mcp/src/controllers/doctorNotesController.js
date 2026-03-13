@@ -24,6 +24,16 @@ export const createDoctorNotesHandler = async (req, res) => {
 
     /*
     ================================================
+    ENSURE DOCTOR NOTES ARRAY EXISTS
+    ================================================
+    */
+
+    if (!encounter.doctorNotes) {
+      encounter.doctorNotes = [];
+    }
+
+    /*
+    ================================================
     STATE VALIDATION
     ================================================
     */
@@ -44,12 +54,14 @@ export const createDoctorNotesHandler = async (req, res) => {
     ================================================
     */
 
-    encounter.doctorNotes.push({
+    const doctorNoteEntry = {
       consultationNotes,
       assessment,
       diagnosis,
       recordedAt: new Date().toISOString()
-    });
+    };
+
+    encounter.doctorNotes.push(doctorNoteEntry);
 
     /*
     ================================================
@@ -60,8 +72,14 @@ export const createDoctorNotesHandler = async (req, res) => {
     addTimelineEvent(
       encounter,
       "DOCTOR_CONSULTATION_RECORDED",
-      { consultationNotes, assessment, diagnosis }
+      doctorNoteEntry
     );
+
+    /*
+    ================================================
+    UPDATE ENCOUNTER
+    ================================================
+    */
 
     await updateEncounter(encounterId, encounter);
 
@@ -69,7 +87,7 @@ export const createDoctorNotesHandler = async (req, res) => {
 
   } catch (err) {
 
-    console.error(err);
+    console.error("Doctor notes error:", err);
 
     res.status(500).json({
       error: "Failed to record doctor notes"
