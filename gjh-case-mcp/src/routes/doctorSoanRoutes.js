@@ -1,5 +1,5 @@
 import express from "express";
-import { recordDoctorSOAN } from "../controllers/doctorSoanController.js";
+import { createDoctorSOANHandler } from "../controllers/doctorSoanController.js";
 
 const router = express.Router();
 
@@ -9,6 +9,6 @@ POST /encounters/:id/doctor-soan
 =========================================
 */
 
-router.post("/:id/doctor-soan", recordDoctorSOAN);
+router.post("/:id/doctor-soan", createDoctorSOANHandler);
 
 export default router;
