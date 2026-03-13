@@ -3,12 +3,12 @@ import { addTimelineEvent } from "../services/timelineLogger.js";
 import { canTransition } from "../services/clinicalStateMachine.js";
 
 /*
-================================================
+=========================================
 GENERATE DOCTOR SOAN
-================================================
+=========================================
 */
 
-export const generateDoctorSOAN = async (req, res) => {
+export const createDoctorSOANHandler = async (req, res) => {
 
   try {
 
@@ -23,46 +23,67 @@ export const generateDoctorSOAN = async (req, res) => {
     }
 
     /*
-    ============================================
+    =========================================
     STATE VALIDATION
-    ============================================
+    =========================================
     */
 
     if (!canTransition(encounter.state, "treatment_decision")) {
 
       return res.status(400).json({
-        error: "Doctor consultation must occur first"
+        error: "Doctor consultation must happen first"
       });
 
-    }
-
-    const notes = encounter.doctorNotes[encounter.doctorNotes.length - 1];
-
-    if (!notes) {
-      return res.status(400).json({
-        error: "Doctor notes required before SOAN"
-      });
     }
 
     /*
-    ============================================
-    BUILD SOAN FROM DOCTOR NOTES
-    ============================================
+    =========================================
+    GET LAST DOCTOR NOTES
+    =========================================
     */
+
+    const lastDoctorNote =
+      encounter.doctorNotes[encounter.doctorNotes.length - 1];
+
+    if (!lastDoctorNote) {
+
+      return res.status(400).json({
+        error: "Doctor notes required before generating SOAN"
+      });
+
+    }
+
+    /*
+    =========================================
+    BUILD DOCTOR SOAN
+    =========================================
+    */
+
+    if (!encounter.soan) {
+      encounter.soan = {};
+    }
 
     encounter.soan.doctor = {
 
-      subjective: notes.consultationNotes || "",
+      subjective: lastDoctorNote.consultationNotes || "",
 
       objective: encounter.vitals || {},
 
-      assessment: notes.assessment || "",
+      assessment: lastDoctorNote.assessment || "",
 
-      nextSteps: notes.diagnosis || ""
+      nextSteps: lastDoctorNote.diagnosis || "",
+
+      createdAt: new Date().toISOString()
 
     };
 
     encounter.state = "treatment_decision";
+
+    /*
+    =========================================
+    TIMELINE EVENT
+    =========================================
+    */
 
     addTimelineEvent(
       encounter,
@@ -70,13 +91,23 @@ export const generateDoctorSOAN = async (req, res) => {
       encounter.soan.doctor
     );
 
+    /*
+    =========================================
+    UPDATE ENCOUNTER
+    =========================================
+    */
+
     await updateEncounter(encounterId, encounter);
 
-    res.json(encounter.soan.doctor);
+    res.json({
+      status: "doctor_soan_generated",
+      encounterId,
+      soan: encounter.soan.doctor
+    });
 
   } catch (err) {
 
-    console.error(err);
+    console.error("Doctor SOAN error:", err);
 
     res.status(500).json({
       error: "Failed to generate doctor SOAN"
