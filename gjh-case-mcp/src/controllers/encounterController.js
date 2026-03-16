@@ -3,19 +3,13 @@ import path from "path";
 import crypto from "crypto";
 import { v4 as uuidv4 } from "uuid";
 
-/*
-==================================================
-DATA FILES
-==================================================
-*/
-
 const ENCOUNTERS_FILE = "data/encounters.json";
 const PATIENTS_FILE = "data/patients.json";
 
 /*
-==================================================
+==============================================
 HELPERS
-==================================================
+==============================================
 */
 
 function readJSON(file) {
@@ -49,39 +43,32 @@ function ensureEventFolder(encounterId) {
 }
 
 /*
-==================================================
-EVENT APPEND WITH HASH CHAIN
-==================================================
+==============================================
+EVENT APPEND WITH HASH
+==============================================
 */
 
 function appendEvent(encounterId, file, payload) {
 
-  const eventsDir = ensureEventFolder(encounterId);
+  const dir = ensureEventFolder(encounterId);
 
-  const filePath = path.join(eventsDir, file);
+  const filePath = path.join(dir, file);
 
   let events = [];
 
   if (fs.existsSync(filePath)) {
-    const raw = fs.readFileSync(filePath);
-    events = JSON.parse(raw);
+    events = JSON.parse(fs.readFileSync(filePath));
   }
 
   const previousHash =
     events.length > 0 ? events[events.length - 1].hash : "GENESIS";
 
   const event = {
-
     eventId: uuidv4(),
-
     actor: payload.actor || "system",
-
     data: payload,
-
     timestamp: new Date().toISOString(),
-
     previousHash
-
   };
 
   const hash = crypto
@@ -98,9 +85,9 @@ function appendEvent(encounterId, file, payload) {
 }
 
 /*
-==================================================
+==============================================
 CREATE ENCOUNTER
-==================================================
+==============================================
 */
 
 export async function createEncounterHandler(req, res) {
@@ -110,9 +97,7 @@ export async function createEncounterHandler(req, res) {
     const { patientId, reasonCode } = req.body;
 
     if (!patientId) {
-      return res.status(400).json({
-        error: "patientId required"
-      });
+      return res.status(400).json({ error: "patientId required" });
     }
 
     const patients = readJSON(PATIENTS_FILE);
@@ -120,29 +105,19 @@ export async function createEncounterHandler(req, res) {
     const patient = patients.find(p => p.id === patientId);
 
     if (!patient) {
-      return res.status(404).json({
-        error: "Patient does not exist"
-      });
+      return res.status(404).json({ error: "Patient does not exist" });
     }
 
     const encounters = readJSON(ENCOUNTERS_FILE);
 
     const encounter = {
-
       resourceType: "Encounter",
-
       id: uuidv4(),
-
       patientId,
-
       status: "in-progress",
-
       stage: "intake",
-
       reasonCode: reasonCode || [],
-
       createdAt: new Date().toISOString()
-
     };
 
     encounters.push(encounter);
@@ -157,99 +132,35 @@ export async function createEncounterHandler(req, res) {
 
     console.error("Create encounter error:", err);
 
-    res.status(500).json({
-      error: "Failed to create encounter"
-    });
+    res.status(500).json({ error: "Failed to create encounter" });
 
   }
 
 }
 
 /*
-==================================================
-GET ALL ENCOUNTERS
-==================================================
+==============================================
+SET STAGE
+==============================================
 */
 
-export async function getEncountersHandler(req, res) {
-
-  try {
-
-    const encounters = readJSON(ENCOUNTERS_FILE);
-
-    res.json(encounters);
-
-  } catch (err) {
-
-    console.error("Get encounters error:", err);
-
-    res.status(500).json({
-      error: "Failed to load encounters"
-    });
-
-  }
-
-}
-
-/*
-==================================================
-GET SINGLE ENCOUNTER
-==================================================
-*/
-
-export async function getEncounterHandler(req, res) {
+export async function setEncounterStageHandler(req, res) {
 
   try {
 
     const encounterId = req.params.id;
+
+    const { stage } = req.body;
 
     const encounters = readJSON(ENCOUNTERS_FILE);
 
     const encounter = encounters.find(e => e.id === encounterId);
 
     if (!encounter) {
-      return res.status(404).json({
-        error: "Encounter not found"
-      });
+      return res.status(404).json({ error: "Encounter not found" });
     }
 
-    res.json(encounter);
-
-  } catch (err) {
-
-    console.error("Get encounter error:", err);
-
-    res.status(500).json({
-      error: "Failed to load encounter"
-    });
-
-  }
-
-}
-
-/*
-==================================================
-UPDATE ENCOUNTER
-==================================================
-*/
-
-export async function updateEncounterHandler(req, res) {
-
-  try {
-
-    const encounterId = req.params.id;
-
-    const encounters = readJSON(ENCOUNTERS_FILE);
-
-    const encounter = encounters.find(e => e.id === encounterId);
-
-    if (!encounter) {
-      return res.status(404).json({
-        error: "Encounter not found"
-      });
-    }
-
-    Object.assign(encounter, req.body);
+    encounter.stage = stage;
 
     writeJSON(ENCOUNTERS_FILE, encounters);
 
@@ -257,20 +168,16 @@ export async function updateEncounterHandler(req, res) {
 
   } catch (err) {
 
-    console.error("Update encounter error:", err);
-
-    res.status(500).json({
-      error: "Failed to update encounter"
-    });
+    res.status(500).json({ error: "Failed to update stage" });
 
   }
 
 }
 
 /*
-==================================================
-EVENT INGESTION
-==================================================
+==============================================
+VITALS
+==============================================
 */
 
 export async function addVitalsHandler(req, res) {
@@ -283,15 +190,17 @@ export async function addVitalsHandler(req, res) {
 
   } catch (err) {
 
-    console.error("Vitals error:", err);
-
-    res.status(500).json({
-      error: "Failed to record vitals"
-    });
+    res.status(500).json({ error: "Vitals failed" });
 
   }
 
 }
+
+/*
+==============================================
+SYMPTOMS
+==============================================
+*/
 
 export async function addSymptomsHandler(req, res) {
 
@@ -303,15 +212,17 @@ export async function addSymptomsHandler(req, res) {
 
   } catch (err) {
 
-    console.error("Symptoms error:", err);
-
-    res.status(500).json({
-      error: "Failed to record symptoms"
-    });
+    res.status(500).json({ error: "Symptoms failed" });
 
   }
 
 }
+
+/*
+==============================================
+NURSE NOTES
+==============================================
+*/
 
 export async function addNotesHandler(req, res) {
 
@@ -319,19 +230,43 @@ export async function addNotesHandler(req, res) {
 
     appendEvent(req.params.id, "notes.json", req.body);
 
-    res.json({ status: "note recorded" });
+    res.json({ status: "notes recorded" });
 
   } catch (err) {
 
-    console.error("Notes error:", err);
-
-    res.status(500).json({
-      error: "Failed to record notes"
-    });
+    res.status(500).json({ error: "Notes failed" });
 
   }
 
 }
+
+/*
+==============================================
+DOCTOR NOTES
+==============================================
+*/
+
+export async function addDoctorNotesHandler(req, res) {
+
+  try {
+
+    appendEvent(req.params.id, "doctor-notes.json", req.body);
+
+    res.json({ status: "doctor notes recorded" });
+
+  } catch (err) {
+
+    res.status(500).json({ error: "Doctor notes failed" });
+
+  }
+
+}
+
+/*
+==============================================
+AI TRIAGE
+==============================================
+*/
 
 export async function addTriageHandler(req, res) {
 
@@ -343,20 +278,38 @@ export async function addTriageHandler(req, res) {
 
   } catch (err) {
 
-    console.error("Triage error:", err);
-
-    res.status(500).json({
-      error: "Failed to record triage"
-    });
+    res.status(500).json({ error: "Triage failed" });
 
   }
 
 }
 
 /*
-==================================================
-GET ENCOUNTER TIMELINE
-==================================================
+==============================================
+TREATMENT DECISION
+==============================================
+*/
+
+export async function addTreatmentDecisionHandler(req, res) {
+
+  try {
+
+    appendEvent(req.params.id, "prescriptions.json", req.body);
+
+    res.json({ status: "treatment decision recorded" });
+
+  } catch (err) {
+
+    res.status(500).json({ error: "Treatment decision failed" });
+
+  }
+
+}
+
+/*
+==============================================
+TIMELINE
+==============================================
 */
 
 export async function getEncounterTimelineHandler(req, res) {
@@ -370,65 +323,49 @@ export async function getEncounterTimelineHandler(req, res) {
     const encounter = encounters.find(e => e.id === encounterId);
 
     if (!encounter) {
-      return res.status(404).json({
-        error: "Encounter not found"
-      });
+      return res.status(404).json({ error: "Encounter not found" });
     }
 
     const patients = readJSON(PATIENTS_FILE);
 
     const patient = patients.find(p => p.id === encounter.patientId);
 
-    const eventsDir = ensureEventFolder(encounterId);
+    const dir = ensureEventFolder(encounterId);
 
-    function loadEvent(file) {
+    function load(file) {
 
-      const filePath = path.join(eventsDir, file);
+      const filePath = path.join(dir, file);
 
       if (!fs.existsSync(filePath)) {
         return [];
       }
 
-      const raw = fs.readFileSync(filePath);
-
-      return JSON.parse(raw);
+      return JSON.parse(fs.readFileSync(filePath));
 
     }
-
-    const timeline = {
-
-      vitals: loadEvent("vitals.json"),
-
-      symptoms: loadEvent("symptoms.json"),
-
-      notes: loadEvent("notes.json"),
-
-      triage: loadEvent("triage.json"),
-
-      soan: loadEvent("soan.json"),
-
-      prescriptions: loadEvent("prescriptions.json")
-
-    };
 
     res.json({
 
       patient,
-
       encounter,
 
-      timeline
+      timeline: {
+
+        vitals: load("vitals.json"),
+        symptoms: load("symptoms.json"),
+        notes: load("notes.json"),
+        doctorNotes: load("doctor-notes.json"),
+        triage: load("triage.json"),
+        prescriptions: load("prescriptions.json")
+
+      }
 
     });
 
   } catch (err) {
 
-    console.error("Timeline error:", err);
-
-    res.status(500).json({
-      error: "Failed to build timeline"
-    });
+    res.status(500).json({ error: "Timeline failed" });
 
   }
 
-      }
+                   }
