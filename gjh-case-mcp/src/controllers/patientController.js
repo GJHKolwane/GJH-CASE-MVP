@@ -5,20 +5,24 @@ import {
   searchPatients
 } from "../models/patientModel.js";
 
+
 /*
 CREATE PATIENT
-Expected body:
-
-{
-  identifier: "123456",
-  fullName: "Jane Doe",
-  age: 87
-}
 */
 
 export const createPatientHandler = async (req, res) => {
+
   try {
-    const { identifier, fullName, age } = req.body;
+
+    const {
+      identifier,
+      fullName,
+      gender,
+      birthDate,
+      telecom,
+      address,
+      system
+    } = req.body;
 
     if (!identifier || !fullName) {
       return res.status(400).json({
@@ -29,18 +33,25 @@ export const createPatientHandler = async (req, res) => {
     const patient = await createPatient({
       identifier,
       fullName,
-      age
+      gender,
+      birthDate,
+      telecom,
+      address,
+      system
     });
 
     res.json(patient);
 
   } catch (error) {
+
     console.error("createPatientHandler error:", error);
 
     res.status(500).json({
       error: "Failed to create patient"
     });
+
   }
+
 };
 
 
@@ -49,6 +60,7 @@ GET ALL PATIENTS
 */
 
 export const getPatientsHandler = async (req, res) => {
+
   try {
 
     const patients = await getPatients();
@@ -57,25 +69,24 @@ export const getPatientsHandler = async (req, res) => {
 
   } catch (error) {
 
-    console.error("getPatientsHandler error:", error);
-
     res.status(500).json({
       error: "Failed to retrieve patients"
     });
+
   }
+
 };
 
 
 /*
-GET SINGLE PATIENT BY IDENTIFIER
+GET SINGLE PATIENT
 */
 
 export const getPatientHandler = async (req, res) => {
+
   try {
 
-    const identifier = req.params.id;
-
-    const patient = await getPatientById(identifier);
+    const patient = await getPatientById(req.params.id);
 
     if (!patient) {
       return res.status(404).json({
@@ -87,25 +98,21 @@ export const getPatientHandler = async (req, res) => {
 
   } catch (error) {
 
-    console.error("getPatientHandler error:", error);
-
     res.status(500).json({
       error: "Failed to retrieve patient"
     });
+
   }
+
 };
 
 
 /*
 SEARCH PATIENTS
-
-Query examples:
-
-/patients/search?identifier=123456
-/patients/search?name=jane
 */
 
 export const searchPatientsHandler = async (req, res) => {
+
   try {
 
     const { identifier, name } = req.query;
@@ -119,10 +126,10 @@ export const searchPatientsHandler = async (req, res) => {
 
   } catch (error) {
 
-    console.error("searchPatientsHandler error:", error);
-
     res.status(500).json({
-      error: "Patient search failed"
+      error: "Search failed"
     });
+
   }
+
 };
