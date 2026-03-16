@@ -292,3 +292,155 @@ export async function getEncounterTimelineHandler(req, res) {
   }
 
     }
+
+/*
+==================================================
+EVENT WRITER
+==================================================
+*/
+
+function appendEvent(encounterId, file, payload) {
+
+  const eventsDir = path.join("data", "events", encounterId);
+
+  if (!fs.existsSync(eventsDir)) {
+    fs.mkdirSync(eventsDir, { recursive: true });
+  }
+
+  const filePath = path.join(eventsDir, file);
+
+  let data = [];
+
+  if (fs.existsSync(filePath)) {
+    const raw = fs.readFileSync(filePath);
+    data = JSON.parse(raw);
+  }
+
+  data.push({
+    ...payload,
+    timestamp: new Date().toISOString()
+  });
+
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+
+}
+
+/*
+==================================================
+VITALS EVENT
+==================================================
+*/
+
+export async function addVitalsHandler(req, res) {
+
+  try {
+
+    const encounterId = req.params.id;
+
+    appendEvent(encounterId, "vitals.json", req.body);
+
+    res.json({
+      status: "vitals recorded"
+    });
+
+  } catch (err) {
+
+    console.error("Vitals error:", err);
+
+    res.status(500).json({
+      error: "Failed to record vitals"
+    });
+
+  }
+
+}
+
+/*
+==================================================
+SYMPTOMS EVENT
+==================================================
+*/
+
+export async function addSymptomsHandler(req, res) {
+
+  try {
+
+    const encounterId = req.params.id;
+
+    appendEvent(encounterId, "symptoms.json", req.body);
+
+    res.json({
+      status: "symptoms recorded"
+    });
+
+  } catch (err) {
+
+    console.error("Symptoms error:", err);
+
+    res.status(500).json({
+      error: "Failed to record symptoms"
+    });
+
+  }
+
+}
+
+/*
+==================================================
+NOTES EVENT
+==================================================
+*/
+
+export async function addNotesHandler(req, res) {
+
+  try {
+
+    const encounterId = req.params.id;
+
+    appendEvent(encounterId, "notes.json", req.body);
+
+    res.json({
+      status: "note recorded"
+    });
+
+  } catch (err) {
+
+    console.error("Notes error:", err);
+
+    res.status(500).json({
+      error: "Failed to record notes"
+    });
+
+  }
+
+}
+
+/*
+==================================================
+TRIAGE EVENT
+==================================================
+*/
+
+export async function addTriageHandler(req, res) {
+
+  try {
+
+    const encounterId = req.params.id;
+
+    appendEvent(encounterId, "triage.json", req.body);
+
+    res.json({
+      status: "triage recorded"
+    });
+
+  } catch (err) {
+
+    console.error("Triage error:", err);
+
+    res.status(500).json({
+      error: "Failed to record triage"
+    });
+
+  }
+
+}
