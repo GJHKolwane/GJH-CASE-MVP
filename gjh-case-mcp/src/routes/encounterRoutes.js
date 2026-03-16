@@ -2,35 +2,31 @@ import express from "express";
 
 import {
 createEncounterHandler,
-getEncountersHandler,
-getEncounterHandler,
-updateEncounterHandler,
-getEncounterTimelineHandler,
+setEncounterStageHandler,
 addVitalsHandler,
 addSymptomsHandler,
 addNotesHandler,
-addTriageHandler
+addDoctorNotesHandler,
+addTriageHandler,
+addTreatmentDecisionHandler,
+getEncounterTimelineHandler
 } from "../controllers/encounterController.js";
 
 const router = express.Router();
 
 /*
 =====================================
-ENCOUNTER MANAGEMENT
+ENCOUNTERS
 =====================================
 */
 
 router.post("/", createEncounterHandler);
 
-router.get("/", getEncountersHandler);
-
-router.get("/:id", getEncounterHandler);
-
-router.patch("/:id", updateEncounterHandler);
+router.post("/:id/stage", setEncounterStageHandler);
 
 /*
 =====================================
-EVENT INGESTION
+EVENTS
 =====================================
 */
 
@@ -40,7 +36,11 @@ router.post("/:id/symptoms", addSymptomsHandler);
 
 router.post("/:id/notes", addNotesHandler);
 
+router.post("/:id/doctor-notes", addDoctorNotesHandler);
+
 router.post("/:id/triage", addTriageHandler);
+
+router.post("/:id/treatment-decision", addTreatmentDecisionHandler);
 
 /*
 =====================================
