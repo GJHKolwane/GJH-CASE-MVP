@@ -20,262 +20,275 @@ HELPERS
 function readJSON(file) {
 
   if (!fs.existsSync(file)) {
-      return [];
-        }
+    return [];
+  }
 
-          const raw = fs.readFileSync(file);
+  const raw = fs.readFileSync(file);
 
-            return JSON.parse(raw);
-            }
+  return JSON.parse(raw);
 
-            function writeJSON(file, data) {
+}
 
-              fs.writeFileSync(file, JSON.stringify(data, null, 2));
+function writeJSON(file, data) {
 
-              }
+  fs.writeFileSync(file, JSON.stringify(data, null, 2));
 
-              function ensureEventFolder(encounterId) {
+}
 
-                const dir = path.join("data", "events", encounterId);
+function ensureEventFolder(encounterId) {
 
-                  if (!fs.existsSync(dir)) {
-                      fs.mkdirSync(dir, { recursive: true });
-                        }
+  const dir = path.join("data", "events", encounterId);
 
-                          return dir;
-                          }
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
 
-                          /*
-                          ==================================================
-                          CREATE ENCOUNTER
-                          ==================================================
-                          */
+  return dir;
 
-                          export async function createEncounterHandler(req, res) {
+}
 
-                            try {
+/*
+==================================================
+CREATE ENCOUNTER
+==================================================
+*/
 
-                                const { patientId, reasonCode } = req.body;
+export async function createEncounterHandler(req, res) {
 
-                                    if (!patientId) {
-                                          return res.status(400).json({
-                                                  error: "patientId required"
-                                                        });
-                                                            }
+  try {
 
-                                                                const encounters = readJSON(ENCOUNTERS_FILE);
+    const { patientId, reasonCode } = req.body;
 
-                                                                    const encounter = {
+    if (!patientId) {
+      return res.status(400).json({
+        error: "patientId required"
+      });
+    }
 
-                                                                          id: uuidv4(),
+    const patients = readJSON(PATIENTS_FILE);
 
-                                                                                patientId,
+    const patient = patients.find(p => p.id === patientId);
 
-                                                                                      status: "in-progress",
+    if (!patient) {
+      return res.status(404).json({
+        error: "Patient does not exist"
+      });
+    }
 
-                                                                                            reasonCode: reasonCode || [],
+    const encounters = readJSON(ENCOUNTERS_FILE);
 
-                                                                                                  createdAt: new Date().toISOString()
+    const encounter = {
 
-                                                                                                      };
+      resourceType: "Encounter",
 
-                                                                                                          encounters.push(encounter);
+      id: uuidv4(),
 
-                                                                                                              writeJSON(ENCOUNTERS_FILE, encounters);
+      patientId,
 
-                                                                                                                  ensureEventFolder(encounter.id);
+      status: "in-progress",
 
-                                                                                                                      res.json(encounter);
+      stage: "intake",
 
-                                                                                                                        } catch (err) {
+      reasonCode: reasonCode || [],
 
-                                                                                                                            console.error("Create encounter error:", err);
+      createdAt: new Date().toISOString()
 
-                                                                                                                                res.status(500).json({
-                                                                                                                                      error: "Failed to create encounter"
-                                                                                                                                          });
+    };
 
-                                                                                                                                            }
+    encounters.push(encounter);
 
-                                                                                                                                            }
+    writeJSON(ENCOUNTERS_FILE, encounters);
 
-                                                                                                                                            /*
-                                                                                                                                            ==================================================
-                                                                                                                                            GET ALL ENCOUNTERS
-                                                                                                                                            ==================================================
-                                                                                                                                            */
+    ensureEventFolder(encounter.id);
 
-                                                                                                                                            export async function getEncountersHandler(req, res) {
+    res.json(encounter);
 
-                                                                                                                                              try {
+  } catch (err) {
 
-                                                                                                                                                  const encounters = readJSON(ENCOUNTERS_FILE);
+    console.error("Create encounter error:", err);
 
-                                                                                                                                                      res.json(encounters);
+    res.status(500).json({
+      error: "Failed to create encounter"
+    });
 
-                                                                                                                                                        } catch (err) {
+  }
 
-                                                                                                                                                            console.error("Get encounters error:", err);
+}
 
-                                                                                                                                                                res.status(500).json({
-                                                                                                                                                                      error: "Failed to load encounters"
-                                                                                                                                                                          });
+/*
+==================================================
+GET ALL ENCOUNTERS
+==================================================
+*/
 
-                                                                                                                                                                            }
+export async function getEncountersHandler(req, res) {
 
-                                                                                                                                                                            }
+  try {
 
-                                                                                                                                                                            /*
-                                                                                                                                                                            ==================================================
-                                                                                                                                                                            GET SINGLE ENCOUNTER
-                                                                                                                                                                            ==================================================
-                                                                                                                                                                            */
+    const encounters = readJSON(ENCOUNTERS_FILE);
 
-                                                                                                                                                                            export async function getEncounterHandler(req, res) {
+    res.json(encounters);
 
-                                                                                                                                                                              try {
+  } catch (err) {
 
-                                                                                                                                                                                  const encounterId = req.params.id;
+    console.error("Get encounters error:", err);
 
-                                                                                                                                                                                      const encounters = readJSON(ENCOUNTERS_FILE);
+    res.status(500).json({
+      error: "Failed to load encounters"
+    });
 
-                                                                                                                                                                                          const encounter = encounters.find(e => e.id === encounterId);
+  }
 
-                                                                                                                                                                                              if (!encounter) {
-                                                                                                                                                                                                    return res.status(404).json({
-                                                                                                                                                                                                            error: "Encounter not found"
-                                                                                                                                                                                                                  });
-                                                                                                                                                                                                                      }
+}
 
-                                                                                                                                                                                                                          res.json(encounter);
+/*
+==================================================
+GET SINGLE ENCOUNTER
+==================================================
+*/
 
-                                                                                                                                                                                                                            } catch (err) {
+export async function getEncounterHandler(req, res) {
 
-                                                                                                                                                                                                                                console.error("Get encounter error:", err);
+  try {
 
-                                                                                                                                                                                                                                    res.status(500).json({
-                                                                                                                                                                                                                                          error: "Failed to load encounter"
-                                                                                                                                                                                                                                              });
+    const encounterId = req.params.id;
 
-                                                                                                                                                                                                                                                }
+    const encounters = readJSON(ENCOUNTERS_FILE);
 
-                                                                                                                                                                                                                                                }
+    const encounter = encounters.find(e => e.id === encounterId);
 
-                                                                                                                                                                                                                                                /*
-                                                                                                                                                                                                                                                ==================================================
-                                                                                                                                                                                                                                                UPDATE ENCOUNTER STATUS
-                                                                                                                                                                                                                                                ==================================================
-                                                                                                                                                                                                                                                */
+    if (!encounter) {
+      return res.status(404).json({
+        error: "Encounter not found"
+      });
+    }
 
-                                                                                                                                                                                                                                                export async function updateEncounterHandler(req, res) {
+    res.json(encounter);
 
-                                                                                                                                                                                                                                                  try {
+  } catch (err) {
 
-                                                                                                                                                                                                                                                      const encounterId = req.params.id;
+    console.error("Get encounter error:", err);
 
-                                                                                                                                                                                                                                                          const encounters = readJSON(ENCOUNTERS_FILE);
+    res.status(500).json({
+      error: "Failed to load encounter"
+    });
 
-                                                                                                                                                                                                                                                              const encounter = encounters.find(e => e.id === encounterId);
+  }
 
-                                                                                                                                                                                                                                                                  if (!encounter) {
-                                                                                                                                                                                                                                                                        return res.status(404).json({
-                                                                                                                                                                                                                                                                                error: "Encounter not found"
-                                                                                                                                                                                                                                                                                      });
-                                                                                                                                                                                                                                                                                          }
+}
 
-                                                                                                                                                                                                                                                                                              Object.assign(encounter, req.body);
+/*
+==================================================
+UPDATE ENCOUNTER
+==================================================
+*/
 
-                                                                                                                                                                                                                                                                                                  writeJSON(ENCOUNTERS_FILE, encounters);
+export async function updateEncounterHandler(req, res) {
 
-                                                                                                                                                                                                                                                                                                      res.json(encounter);
+  try {
 
-                                                                                                                                                                                                                                                                                                        } catch (err) {
+    const encounterId = req.params.id;
 
-                                                                                                                                                                                                                                                                                                            console.error("Update encounter error:", err);
+    const encounters = readJSON(ENCOUNTERS_FILE);
 
-                                                                                                                                                                                                                                                                                                                res.status(500).json({
-                                                                                                                                                                                                                                                                                                                      error: "Failed to update encounter"
-                                                                                                                                                                                                                                                                                                                          });
+    const encounter = encounters.find(e => e.id === encounterId);
 
-                                                                                                                                                                                                                                                                                                                            }
+    if (!encounter) {
+      return res.status(404).json({
+        error: "Encounter not found"
+      });
+    }
 
-                                                                                                                                                                                                                                                                                                                            }
+    Object.assign(encounter, req.body);
 
-                                                                                                                                                                                                                                                                                                                            /*
-                                                                                                                                                                                                                                                                                                                            ==================================================
-                                                                                                                                                                                                                                                                                                                            GET ENCOUNTER TIMELINE
-                                                                                                                                                                                                                                                                                                                            ==================================================
-                                                                                                                                                                                                                                                                                                                            */
+    writeJSON(ENCOUNTERS_FILE, encounters);
 
-                                                                                                                                                                                                                                                                                                                            export async function getEncounterTimelineHandler(req, res) {
+    res.json(encounter);
 
-                                                                                                                                                                                                                                                                                                                              try {
+  } catch (err) {
 
-                                                                                                                                                                                                                                                                                                                                  const encounterId = req.params.id;
+    console.error("Update encounter error:", err);
 
-                                                                                                                                                                                                                                                                                                                                      const encounters = readJSON(ENCOUNTERS_FILE);
+    res.status(500).json({
+      error: "Failed to update encounter"
+    });
 
-                                                                                                                                                                                                                                                                                                                                          const encounter = encounters.find(e => e.id === encounterId);
+  }
 
-                                                                                                                                                                                                                                                                                                                                              if (!encounter) {
-                                                                                                                                                                                                                                                                                                                                                    return res.status(404).json({
-                                                                                                                                                                                                                                                                                                                                                            error: "Encounter not found"
-                                                                                                                                                                                                                                                                                                                                                                  });
-                                                                                                                                                                                                                                                                                                                                                                      }
+}
 
-                                                                                                                                                                                                                                                                                                                                                                          const patients = readJSON(PATIENTS_FILE);
+/*
+==================================================
+GET ENCOUNTER TIMELINE
+==================================================
+*/
 
-                                                                                                                                                                                                                                                                                                                                                                              const patient = patients.find(p => p.id === encounter.patientId);
+export async function getEncounterTimelineHandler(req, res) {
 
-                                                                                                                                                                                                                                                                                                                                                                                  const eventsDir = path.join("data", "events", encounterId);
+  try {
 
-                                                                                                                                                                                                                                                                                                                                                                                      function loadEvent(file) {
+    const encounterId = req.params.id;
 
-                                                                                                                                                                                                                                                                                                                                                                                            const filePath = path.join(eventsDir, file);
+    const encounters = readJSON(ENCOUNTERS_FILE);
 
-                                                                                                                                                                                                                                                                                                                                                                                                  if (!fs.existsSync(filePath)) {
-                                                                                                                                                                                                                                                                                                                                                                                                          return [];
-                                                                                                                                                                                                                                                                                                                                                                                                                }
+    const encounter = encounters.find(e => e.id === encounterId);
 
-                                                                                                                                                                                                                                                                                                                                                                                                                      const raw = fs.readFileSync(filePath);
+    if (!encounter) {
+      return res.status(404).json({
+        error: "Encounter not found"
+      });
+    }
 
-                                                                                                                                                                                                                                                                                                                                                                                                                            return JSON.parse(raw);
-                                                                                                                                                                                                                                                                                                                                                                                                                                }
+    const patients = readJSON(PATIENTS_FILE);
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                    const timeline = {
+    const patient = patients.find(p => p.id === encounter.patientId);
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                          vitals: loadEvent("vitals.json"),
+    const eventsDir = ensureEventFolder(encounterId);
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                symptoms: loadEvent("symptoms.json"),
+    function loadEvent(file) {
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                      notes: loadEvent("notes.json"),
+      const filePath = path.join(eventsDir, file);
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                            triage: loadEvent("triage.json"),
+      if (!fs.existsSync(filePath)) {
+        return [];
+      }
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                  soan: loadEvent("soan.json"),
+      const raw = fs.readFileSync(filePath);
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                        prescriptions: loadEvent("prescriptions.json")
+      return JSON.parse(raw);
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                            };
+    }
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                res.json({
+    const timeline = {
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      patient,
+      vitals: loadEvent("vitals.json"),
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            encounter,
+      symptoms: loadEvent("symptoms.json"),
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  timeline
+      notes: loadEvent("notes.json"),
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      });
+      triage: loadEvent("triage.json"),
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        } catch (err) {
+      soan: loadEvent("soan.json"),
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            console.error("Timeline error:", err);
+      prescriptions: loadEvent("prescriptions.json")
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                res.status(500).json({
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      error: "Failed to build timeline"
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          });
+    };
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            }
+    res.json({
+      patient,
+      encounter,
+      timeline
+    });
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            }
+  } catch (err) {
+
+    console.error("Timeline error:", err);
+
+    res.status(500).json({
+      error: "Failed to build timeline"
+    });
+
+  }
+
+    }
