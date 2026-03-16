@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 import { v4 as uuidv4 } from "uuid";
 
 /*
@@ -44,6 +45,55 @@ function ensureEventFolder(encounterId) {
   }
 
   return dir;
+
+}
+
+/*
+==================================================
+EVENT APPEND WITH HASH CHAIN
+==================================================
+*/
+
+function appendEvent(encounterId, file, payload) {
+
+  const eventsDir = ensureEventFolder(encounterId);
+
+  const filePath = path.join(eventsDir, file);
+
+  let events = [];
+
+  if (fs.existsSync(filePath)) {
+    const raw = fs.readFileSync(filePath);
+    events = JSON.parse(raw);
+  }
+
+  const previousHash =
+    events.length > 0 ? events[events.length - 1].hash : "GENESIS";
+
+  const event = {
+
+    eventId: uuidv4(),
+
+    actor: payload.actor || "system",
+
+    data: payload,
+
+    timestamp: new Date().toISOString(),
+
+    previousHash
+
+  };
+
+  const hash = crypto
+    .createHash("sha256")
+    .update(JSON.stringify(event))
+    .digest("hex");
+
+  event.hash = hash;
+
+  events.push(event);
+
+  fs.writeFileSync(filePath, JSON.stringify(events, null, 2));
 
 }
 
@@ -219,6 +269,92 @@ export async function updateEncounterHandler(req, res) {
 
 /*
 ==================================================
+EVENT INGESTION
+==================================================
+*/
+
+export async function addVitalsHandler(req, res) {
+
+  try {
+
+    appendEvent(req.params.id, "vitals.json", req.body);
+
+    res.json({ status: "vitals recorded" });
+
+  } catch (err) {
+
+    console.error("Vitals error:", err);
+
+    res.status(500).json({
+      error: "Failed to record vitals"
+    });
+
+  }
+
+}
+
+export async function addSymptomsHandler(req, res) {
+
+  try {
+
+    appendEvent(req.params.id, "symptoms.json", req.body);
+
+    res.json({ status: "symptoms recorded" });
+
+  } catch (err) {
+
+    console.error("Symptoms error:", err);
+
+    res.status(500).json({
+      error: "Failed to record symptoms"
+    });
+
+  }
+
+}
+
+export async function addNotesHandler(req, res) {
+
+  try {
+
+    appendEvent(req.params.id, "notes.json", req.body);
+
+    res.json({ status: "note recorded" });
+
+  } catch (err) {
+
+    console.error("Notes error:", err);
+
+    res.status(500).json({
+      error: "Failed to record notes"
+    });
+
+  }
+
+}
+
+export async function addTriageHandler(req, res) {
+
+  try {
+
+    appendEvent(req.params.id, "triage.json", req.body);
+
+    res.json({ status: "triage recorded" });
+
+  } catch (err) {
+
+    console.error("Triage error:", err);
+
+    res.status(500).json({
+      error: "Failed to record triage"
+    });
+
+  }
+
+}
+
+/*
+==================================================
 GET ENCOUNTER TIMELINE
 ==================================================
 */
@@ -276,9 +412,13 @@ export async function getEncounterTimelineHandler(req, res) {
     };
 
     res.json({
+
       patient,
+
       encounter,
+
       timeline
+
     });
 
   } catch (err) {
@@ -291,156 +431,4 @@ export async function getEncounterTimelineHandler(req, res) {
 
   }
 
-    }
-
-/*
-==================================================
-EVENT WRITER
-==================================================
-*/
-
-function appendEvent(encounterId, file, payload) {
-
-  const eventsDir = path.join("data", "events", encounterId);
-
-  if (!fs.existsSync(eventsDir)) {
-    fs.mkdirSync(eventsDir, { recursive: true });
-  }
-
-  const filePath = path.join(eventsDir, file);
-
-  let data = [];
-
-  if (fs.existsSync(filePath)) {
-    const raw = fs.readFileSync(filePath);
-    data = JSON.parse(raw);
-  }
-
-  data.push({
-    ...payload,
-    timestamp: new Date().toISOString()
-  });
-
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-
-}
-
-/*
-==================================================
-VITALS EVENT
-==================================================
-*/
-
-export async function addVitalsHandler(req, res) {
-
-  try {
-
-    const encounterId = req.params.id;
-
-    appendEvent(encounterId, "vitals.json", req.body);
-
-    res.json({
-      status: "vitals recorded"
-    });
-
-  } catch (err) {
-
-    console.error("Vitals error:", err);
-
-    res.status(500).json({
-      error: "Failed to record vitals"
-    });
-
-  }
-
-}
-
-/*
-==================================================
-SYMPTOMS EVENT
-==================================================
-*/
-
-export async function addSymptomsHandler(req, res) {
-
-  try {
-
-    const encounterId = req.params.id;
-
-    appendEvent(encounterId, "symptoms.json", req.body);
-
-    res.json({
-      status: "symptoms recorded"
-    });
-
-  } catch (err) {
-
-    console.error("Symptoms error:", err);
-
-    res.status(500).json({
-      error: "Failed to record symptoms"
-    });
-
-  }
-
-}
-
-/*
-==================================================
-NOTES EVENT
-==================================================
-*/
-
-export async function addNotesHandler(req, res) {
-
-  try {
-
-    const encounterId = req.params.id;
-
-    appendEvent(encounterId, "notes.json", req.body);
-
-    res.json({
-      status: "note recorded"
-    });
-
-  } catch (err) {
-
-    console.error("Notes error:", err);
-
-    res.status(500).json({
-      error: "Failed to record notes"
-    });
-
-  }
-
-}
-
-/*
-==================================================
-TRIAGE EVENT
-==================================================
-*/
-
-export async function addTriageHandler(req, res) {
-
-  try {
-
-    const encounterId = req.params.id;
-
-    appendEvent(encounterId, "triage.json", req.body);
-
-    res.json({
-      status: "triage recorded"
-    });
-
-  } catch (err) {
-
-    console.error("Triage error:", err);
-
-    res.status(500).json({
-      error: "Failed to record triage"
-    });
-
-  }
-
-}
+      }
