@@ -1,66 +1,66 @@
-import { getEncounterById, updateEncounter } from "../models/encounterModel.js";
-import { addTimelineEvent } from "../services/timelineLogger.js";
-import { canTransition } from "../services/clinicalStateMachine.js";
+import fs from "fs";
+import path from "path";
 
-export const recordVitals = async (req, res) => {
+/*
+==================================================
+HELPERS
+==================================================
+*/
 
-  try {
+function ensureEventFolder(encounterId) {
+  const dir = path.join("data", "events", encounterId);
 
-    const encounterId = req.params.id;
-    const vitals = req.body;
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+          }
 
-    const encounter = await getEncounterById(encounterId);
+            return dir;
+            }
 
-    if (!encounter) {
-      return res.status(404).json({
-        error: "Encounter not found"
-      });
-    }
+            function readJSON(filePath) {
+              if (!fs.existsSync(filePath)) return [];
 
-    /*
-    ================================================
-    STATE VALIDATION
-    ================================================
-    */
+                const raw = fs.readFileSync(filePath);
+                  return JSON.parse(raw);
+                  }
 
-    if (!canTransition(encounter.state, "nurse_assessment")) {
+                  function writeJSON(filePath, data) {
+                    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+                    }
 
-      return res.status(400).json({
-        error: "Encounter not ready for nurse assessment"
-      });
+                    /*
+                    ==================================================
+                    CREATE VITALS
+                    ==================================================
+                    */
 
-    }
+                    export async function createVitalsHandler(req, res) {
+                      try {
+                          const { id } = req.params;
+                              const vitals = req.body;
 
-    encounter.state = "nurse_assessment";
+                                  if (!id) {
+                                        return res.status(400).json({ error: "encounterId required" });
+                                            }
 
-    /*
-    ================================================
-    UPDATE VITALS
-    ================================================
-    */
+                                                const dir = ensureEventFolder(id);
+                                                    const filePath = path.join(dir, "vitals.json");
 
-    encounter.vitals = vitals;
+                                                        const existing = readJSON(filePath);
 
-    /*
-    ================================================
-    TIMELINE EVENT
-    ================================================
-    */
+                                                            const entry = {
+                                                                  ...vitals,
+                                                                        createdAt: new Date().toISOString()
+                                                                            };
 
-    addTimelineEvent(encounter, "VITALS_RECORDED", vitals);
+                                                                                existing.push(entry);
 
-    await updateEncounter(encounterId, encounter);
+                                                                                    writeJSON(filePath, existing);
 
-    res.json(encounter);
+                                                                                        res.json(entry);
 
-  } catch (err) {
-
-    console.error(err);
-
-    res.status(500).json({
-      error: "Failed to record vitals"
-    });
-
-  }
-
-};
+                                                                                          } catch (err) {
+                                                                                              console.error("Vitals error:", err);
+                                                                                                  res.status(500).json({ error: "Failed to store vitals" });
+                                                                                                    }
+                                                                                                    }

@@ -1,77 +1,69 @@
-import { getEncounterById, updateEncounter } from "../models/encounterModel.js";
-import { addTimelineEvent } from "../services/timelineLogger.js";
-import { canTransition } from "../services/clinicalStateMachine.js";
+import fs from "fs";
+import path from "path";
 
 /*
-================================================
-RECORD NURSE NOTES
-================================================
+==================================================
+HELPERS
+==================================================
 */
 
-export const recordNotes = async (req, res) => {
+function ensureDir(encounterId) {
+  const dir = path.join("data", "events", encounterId);
 
-  try {
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+          }
 
-    const encounterId = req.params.id;
-    const { notes } = req.body;
+            return dir;
+            }
 
-    const encounter = await getEncounterById(encounterId);
+            function read(file) {
+              if (!fs.existsSync(file)) return [];
 
-    if (!encounter) {
-      return res.status(404).json({
-        error: "Encounter not found"
-      });
-    }
+                const raw = fs.readFileSync(file);
+                  return JSON.parse(raw);
+                  }
 
-    /*
-    ================================================
-    STATE VALIDATION
-    ================================================
-    Nurse notes must happen during nurse assessment
-    */
+                  function write(file, data) {
+                    fs.writeFileSync(file, JSON.stringify(data, null, 2));
+                    }
 
-    if (!canTransition(encounter.state, "nurse_assessment")) {
+                    /*
+                    ==================================================
+                    CREATE NOTES
+                    ==================================================
+                    */
 
-      return res.status(400).json({
-        error: "Encounter not ready for nurse notes"
-      });
+                    export async function createNotesHandler(req, res) {
+                      try {
+                          const { id } = req.params;
+                              const { notes } = req.body;
 
-    }
+                                  if (!id) {
+                                        return res.status(400).json({ error: "encounterId required" });
+                                            }
 
-    encounter.state = "nurse_assessment";
+                                                const dir = ensureDir(id);
+                                                    const file = path.join(dir, "notes.json");
 
-    /*
-    ================================================
-    STORE NURSE NOTES
-    ================================================
-    */
+                                                        const data = read(file);
 
-    encounter.notes = notes;
+                                                            const entry = {
+                                                                  notes,
+                                                                        createdAt: new Date().toISOString()
+                                                                            };
 
-    /*
-    ================================================
-    TIMELINE EVENT
-    ================================================
-    */
+                                                                                data.push(entry);
 
-    addTimelineEvent(
-      encounter,
-      "NURSE_NOTES_RECORDED",
-      { notes }
-    );
+                                                                                    write(file, data);
 
-    await updateEncounter(encounterId, encounter);
+                                                                                        res.json(entry);
 
-    res.json(encounter);
+                                                                                          } catch (err) {
+                                                                                              console.error("Notes error:", err);
 
-  } catch (err) {
-
-    console.error(err);
-
-    res.status(500).json({
-      error: "Failed to record nurse notes"
-    });
-
-  }
-
-};
+                                                                                                  res.status(500).json({
+                                                                                                        error: "Failed to store notes"
+                                                                                                            });
+                                                                                                              }
+                                                                                                              }

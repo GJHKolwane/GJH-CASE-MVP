@@ -1,41 +1,44 @@
-import { getEncounterById, updateEncounter } from "../models/encounterModel.js";
-import { addTimelineEvent } from "../services/timelineLogger.js";
+import fs from "fs";
+import path from "path";
 
-export const recordSymptoms = async (req, res) => {
+function ensureDir(encounterId) {
+  const dir = path.join("data", "events", encounterId);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      return dir;
+      }
 
-  try {
+      function read(file) {
+        if (!fs.existsSync(file)) return [];
+          return JSON.parse(fs.readFileSync(file));
+          }
 
-    const encounterId = req.params.id;
-    const symptoms = req.body;
+          function write(file, data) {
+            fs.writeFileSync(file, JSON.stringify(data, null, 2));
+            }
 
-    const encounter = await getEncounterById(encounterId);
 
-    if (!encounter) {
-      return res.status(404).json({
-        error: "Encounter not found"
-      });
-    }
 
-    encounter.symptoms = symptoms;
+            export async function createSymptomsHandler(req, res) {
+              try {
+                  const { id } = req.params;
+                      const symptoms = req.body;
 
-    addTimelineEvent(
-      encounter,
-      "SYMPTOMS_RECORDED",
-      symptoms
-    );
+                          const dir = ensureDir(id);
+                              const file = path.join(dir, "symptoms.json");
 
-    await updateEncounter(encounterId, encounter);
+                                  const data = read(file);
 
-    res.json(encounter);
+                                      const entry = {
+                                            symptoms,
+                                                  createdAt: new Date().toISOString()
+                                                      };
 
-  } catch (err) {
+                                                          data.push(entry);
+                                                              write(file, data);
 
-    console.error(err);
-
-    res.status(500).json({
-      error: "Failed to record symptoms"
-    });
-
-  }
-
-};
+                                                                  res.json(entry);
+                                                                    } catch (err) {
+                                                                        console.error(err);
+                                                                            res.status(500).json({ error: "Failed to store symptoms" });
+                                                                              }
+                                                                              }
