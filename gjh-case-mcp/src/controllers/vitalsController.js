@@ -1,66 +1,29 @@
-import fs from "fs";
-import path from "path";
+export async function recordVitals(req, res) {
+  try {
+    const { encounterId, vitals } = req.body;
 
-/*
-==================================================
-HELPERS
-==================================================
-*/
+    if (!encounterId || !vitals) {
+      return res.status(400).json({
+        error: "encounterId and vitals are required"
+      });
+    }
 
-function ensureEventFolder(encounterId) {
-  const dir = path.join("data", "events", encounterId);
+    // 👉 For now mock storage (replace with DB later)
+    const stored = {
+      encounterId,
+      vitals,
+      recordedAt: new Date().toISOString()
+    };
 
-    if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-          }
+    return res.status(200).json({
+      status: "vitals recorded",
+      data: stored
+    });
 
-            return dir;
-            }
-
-            function readJSON(filePath) {
-              if (!fs.existsSync(filePath)) return [];
-
-                const raw = fs.readFileSync(filePath);
-                  return JSON.parse(raw);
-                  }
-
-                  function writeJSON(filePath, data) {
-                    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-                    }
-
-                    /*
-                    ==================================================
-                    CREATE VITALS
-                    ==================================================
-                    */
-
-                    export async function createVitalsHandler(req, res) {
-                      try {
-                          const { id } = req.params;
-                              const vitals = req.body;
-
-                                  if (!id) {
-                                        return res.status(400).json({ error: "encounterId required" });
-                                            }
-
-                                                const dir = ensureEventFolder(id);
-                                                    const filePath = path.join(dir, "vitals.json");
-
-                                                        const existing = readJSON(filePath);
-
-                                                            const entry = {
-                                                                  ...vitals,
-                                                                        createdAt: new Date().toISOString()
-                                                                            };
-
-                                                                                existing.push(entry);
-
-                                                                                    writeJSON(filePath, existing);
-
-                                                                                        res.json(entry);
-
-                                                                                          } catch (err) {
-                                                                                              console.error("Vitals error:", err);
-                                                                                                  res.status(500).json({ error: "Failed to store vitals" });
-                                                                                                    }
-                                                                                                    }
+  } catch (err) {
+    console.error("Vitals error:", err);
+    res.status(500).json({
+      error: "Failed to record vitals"
+    });
+  }
+}
