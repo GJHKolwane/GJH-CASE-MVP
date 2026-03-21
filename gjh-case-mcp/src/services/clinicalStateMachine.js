@@ -3,10 +3,12 @@
 CLINICAL STATE MACHINE
 ================================================
 Controls allowed encounter workflow transitions
-NOW ENHANCED WITH:
+
+ENHANCED WITH:
 - Auto AI triage triggering
 - Escalation logic
 - Case state updates
+- FULL PRESCRIPTION → PHARMACY FLOW
 */
 
 import axios from "axios";
@@ -14,7 +16,7 @@ import { updateCaseStatus } from "@gjh/shared/governance/caseState";
 
 /*
 ================================================
-STATE TRANSITIONS
+STATE TRANSITIONS (FULL GOVERNANCE FLOW)
 ================================================
 */
 
@@ -33,7 +35,11 @@ const transitions = {
 
   treatment_decision: ["prescription_issued"],
 
-  prescription_issued: ["completed"],
+  // ✅ FIX ADDED (PHARMACY BRIDGE)
+  prescription_issued: ["pharmacy_processing"],
+
+  // ✅ FINAL COMPLETION
+  pharmacy_processing: ["completed"],
 };
 
 /*
@@ -70,15 +76,17 @@ TRIGGER AI TRIAGE
 async function triggerTriage(patientCase) {
   try {
     const response = await axios.post(
-      "http://localhost:5050/triage/nurse", // 🔁 adjust if needed
+      "http://localhost:5050/triage/nurse",
       { case: patientCase }
     );
 
     return response.data;
+
   } catch (error) {
+
     console.error("AI TRIAGE ERROR:", error.message);
 
-    // fallback safety
+    // ✅ SAFE FALLBACK
     return {
       assessment: "AI unavailable",
       severity: "MEDIUM",
@@ -97,7 +105,7 @@ ESCALATION TRIGGER
 async function triggerEscalation(patientCase) {
   try {
     await axios.post(
-      "http://localhost:8081/escalate", // 🔁 adjust port if needed
+      "http://localhost:8081/escalate",
       { case: patientCase }
     );
   } catch (error) {
@@ -112,6 +120,7 @@ MAIN STATE ENGINE
 */
 
 export async function processCaseState(patientCase) {
+
   let updatedCase = { ...patientCase };
 
   /*
@@ -121,6 +130,7 @@ export async function processCaseState(patientCase) {
   */
 
   if (shouldTriggerTriage(updatedCase)) {
+
     console.log("⚡ Auto-triggering AI triage...");
 
     const triage = await triggerTriage(updatedCase);
@@ -142,6 +152,7 @@ export async function processCaseState(patientCase) {
     updatedCase?.triage?.severity === "HIGH" ||
     updatedCase?.triage?.severity === "CRITICAL"
   ) {
+
     console.log("🚨 Escalation triggered!");
 
     updatedCase = updateCaseStatus(updatedCase, "ESCALATED");
