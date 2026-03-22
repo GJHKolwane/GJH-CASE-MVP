@@ -7,7 +7,9 @@ import {
 
 
 /*
+=========================================
 CREATE PATIENT
+=========================================
 */
 
 export const createPatientHandler = async (req, res) => {
@@ -30,14 +32,35 @@ export const createPatientHandler = async (req, res) => {
       });
     }
 
+    /*
+    =========================================
+    NORMALIZE TO FHIR-LIKE STRUCTURE
+    =========================================
+    */
+
     const patient = await createPatient({
-      identifier,
-      fullName,
-      gender,
-      birthDate,
-      telecom,
-      address,
-      system
+
+      resourceType: "Patient",
+
+      identifier: [
+        {
+          system: system || "GJH",
+          value: identifier
+        }
+      ],
+
+      name: fullName,
+
+      gender: gender || "unknown",
+
+      birthDate: birthDate || null,
+
+      telecom: telecom || [],
+
+      address: address || [],
+
+      createdAt: new Date().toISOString()
+
     });
 
     res.json(patient);
@@ -56,7 +79,9 @@ export const createPatientHandler = async (req, res) => {
 
 
 /*
+=========================================
 GET ALL PATIENTS
+=========================================
 */
 
 export const getPatientsHandler = async (req, res) => {
@@ -69,6 +94,8 @@ export const getPatientsHandler = async (req, res) => {
 
   } catch (error) {
 
+    console.error("getPatientsHandler error:", error);
+
     res.status(500).json({
       error: "Failed to retrieve patients"
     });
@@ -79,7 +106,9 @@ export const getPatientsHandler = async (req, res) => {
 
 
 /*
+=========================================
 GET SINGLE PATIENT
+=========================================
 */
 
 export const getPatientHandler = async (req, res) => {
@@ -98,6 +127,8 @@ export const getPatientHandler = async (req, res) => {
 
   } catch (error) {
 
+    console.error("getPatientHandler error:", error);
+
     res.status(500).json({
       error: "Failed to retrieve patient"
     });
@@ -108,7 +139,9 @@ export const getPatientHandler = async (req, res) => {
 
 
 /*
+=========================================
 SEARCH PATIENTS
+=========================================
 */
 
 export const searchPatientsHandler = async (req, res) => {
@@ -125,6 +158,8 @@ export const searchPatientsHandler = async (req, res) => {
     res.json(patients);
 
   } catch (error) {
+
+    console.error("searchPatientsHandler error:", error);
 
     res.status(500).json({
       error: "Search failed"
