@@ -15,12 +15,17 @@ HELPERS
 */
 
 function readJSON(file) {
-  if (!fs.existsSync(file)) {
+  try {
+    if (!fs.existsSync(file)) return [];
+
+    const raw = fs.readFileSync(file, "utf-8");
+    if (!raw) return [];
+
+    return JSON.parse(raw);
+  } catch (err) {
+    console.error("JSON read error:", file, err);
     return [];
   }
-
-  const raw = fs.readFileSync(file);
-  return JSON.parse(raw);
 }
 
 function writeJSON(file, data) {
@@ -50,7 +55,11 @@ function appendEvent(encounterId, file, payload) {
   let events = [];
 
   if (fs.existsSync(filePath)) {
-    events = JSON.parse(fs.readFileSync(filePath));
+    try {
+      events = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    } catch {
+      events = [];
+    }
   }
 
   const previousHash =
@@ -90,7 +99,11 @@ function loadCaseSnapshot(encounterId) {
 
     if (!fs.existsSync(filePath)) return [];
 
-    return JSON.parse(fs.readFileSync(filePath));
+    try {
+      return JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    } catch {
+      return [];
+    }
   }
 
   const vitals = load("vitals.json");
@@ -122,7 +135,13 @@ export async function createEncounterHandler(req, res) {
     }
 
     const patients = readJSON(PATIENTS_FILE);
-    const patient = patients.find((p) => p.id === patientId);
+
+    // ✅ FIXED PATIENT MATCHING (UUID + FHIR IDENTIFIER)
+    const patient = patients.find(
+      (p) =>
+        p.id === patientId ||
+        p.identifier?.some((id) => id.value === patientId)
+    );
 
     if (!patient) {
       return res.status(404).json({ error: "Patient does not exist" });
@@ -177,6 +196,7 @@ export async function setEncounterStageHandler(req, res) {
 
     res.json(encounter);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Failed to update stage" });
   }
 }
@@ -238,6 +258,7 @@ export async function addNotesHandler(req, res) {
     appendEvent(req.params.id, "notes.json", req.body);
     res.json({ status: "notes recorded" });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Notes failed" });
   }
 }
@@ -253,6 +274,7 @@ export async function addDoctorNotesHandler(req, res) {
     appendEvent(req.params.id, "doctor-notes.json", req.body);
     res.json({ status: "doctor notes recorded" });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Doctor notes failed" });
   }
 }
@@ -268,6 +290,7 @@ export async function addTriageHandler(req, res) {
     appendEvent(req.params.id, "triage.json", req.body);
     res.json({ status: "triage recorded" });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Triage failed" });
   }
 }
@@ -283,6 +306,7 @@ export async function addTreatmentDecisionHandler(req, res) {
     appendEvent(req.params.id, "prescriptions.json", req.body);
     res.json({ status: "treatment decision recorded" });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Treatment decision failed" });
   }
 }
@@ -305,14 +329,23 @@ export async function getEncounterTimelineHandler(req, res) {
     }
 
     const patients = readJSON(PATIENTS_FILE);
-    const patient = patients.find((p) => p.id === encounter.patientId);
+    const patient = patients.find(
+      (p) =>
+        p.id === encounter.patientId ||
+        p.identifier?.some((id) => id.value === encounter.patientId)
+    );
 
     const dir = ensureEventFolder(encounterId);
 
     function load(file) {
       const filePath = path.join(dir, file);
       if (!fs.existsSync(filePath)) return [];
-      return JSON.parse(fs.readFileSync(filePath));
+
+      try {
+        return JSON.parse(fs.readFileSync(filePath, "utf-8"));
+      } catch {
+        return [];
+      }
     }
 
     res.json({
@@ -328,6 +361,7 @@ export async function getEncounterTimelineHandler(req, res) {
       },
     });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Timeline failed" });
   }
-    }
+  }
