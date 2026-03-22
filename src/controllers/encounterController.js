@@ -130,3 +130,163 @@ export const addNotesHandler = (req, res) => {
     });
   }
 };
+
+// =============================================
+// ADD VITALS
+// =============================================
+export const addVitalsHandler = (req, res) => {
+  try {
+    const { id } = req.params;
+    const vitals = req.body;
+
+    const encounters = readJSON(encountersFile);
+    const encounter = encounters.find(e => e.id === id);
+
+    if (!encounter) {
+      return res.status(404).json({ error: "Encounter not found" });
+    }
+
+    encounter.vitals = vitals;
+
+    writeJSON(encountersFile, encounters);
+
+    return res.json({ message: "Vitals added", encounter });
+
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to add vitals" });
+  }
+};
+
+// =============================================
+// ADD SYMPTOMS
+// =============================================
+export const addSymptomsHandler = (req, res) => {
+  try {
+    const { id } = req.params;
+    const { symptoms } = req.body;
+
+    const encounters = readJSON(encountersFile);
+    const encounter = encounters.find(e => e.id === id);
+
+    if (!encounter) {
+      return res.status(404).json({ error: "Encounter not found" });
+    }
+
+    encounter.symptoms = symptoms || [];
+
+    writeJSON(encountersFile, encounters);
+
+    return res.json({ message: "Symptoms added", encounter });
+
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to add symptoms" });
+  }
+};
+
+// =============================================
+// ADD NOTES
+// =============================================
+export const addNotesHandler = (req, res) => {
+  try {
+    const { id } = req.params;
+    const { notes } = req.body;
+
+    const encounters = readJSON(encountersFile);
+    const encounter = encounters.find(e => e.id === id);
+
+    if (!encounter) {
+      return res.status(404).json({ error: "Encounter not found" });
+    }
+
+    if (!encounter.notesHistory) {
+      encounter.notesHistory = [];
+    }
+
+    encounter.notesHistory.push({
+      note: notes,
+      createdAt: new Date().toISOString()
+    });
+
+    writeJSON(encountersFile, encounters);
+
+    return res.json({ message: "Notes added", encounter });
+
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to add notes" });
+  }
+};
+
+// =============================================
+// TRIAGE
+// =============================================
+export const addTriageHandler = (req, res) => {
+  try {
+    const { id } = req.params;
+    const triage = req.body;
+
+    const encounters = readJSON(encountersFile);
+    const encounter = encounters.find(e => e.id === id);
+
+    if (!encounter) {
+      return res.status(404).json({ error: "Encounter not found" });
+    }
+
+    encounter.triage = triage;
+
+    writeJSON(encountersFile, encounters);
+
+    return res.json({ message: "Triage added", encounter });
+
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to add triage" });
+  }
+};
+
+// =============================================
+// TREATMENT DECISION
+// =============================================
+export const addTreatmentDecisionHandler = (req, res) => {
+  try {
+    const { id } = req.params;
+    const decision = req.body;
+
+    const encounters = readJSON(encountersFile);
+    const encounter = encounters.find(e => e.id === id);
+
+    if (!encounter) {
+      return res.status(404).json({ error: "Encounter not found" });
+    }
+
+    encounter.treatmentDecision = decision;
+
+    writeJSON(encountersFile, encounters);
+
+    return res.json({ message: "Treatment decision recorded", encounter });
+
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to add treatment decision" });
+  }
+};
+
+// =============================================
+// TIMELINE
+// =============================================
+export const getEncounterTimelineHandler = (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const encounters = readJSON(encountersFile);
+    const encounter = encounters.find(e => e.id === id);
+
+    if (!encounter) {
+      return res.status(404).json({ error: "Encounter not found" });
+    }
+
+    return res.json({
+      timeline: encounter.timeline || []
+    });
+
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to fetch timeline" });
+  }
+};
