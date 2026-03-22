@@ -6,18 +6,19 @@ const dataDir = path.resolve("data");
 const patientsFile = path.join(dataDir, "patients.json");
 const encountersFile = path.join(dataDir, "encounters.json");
 
-// Utility: read JSON
+// ===============================
+// UTILITIES
+// ===============================
+
 const readJSON = (file) => {
   if (!fs.existsSync(file)) return [];
   return JSON.parse(fs.readFileSync(file, "utf-8"));
 };
 
-// Utility: write JSON
 const writeJSON = (file, data) => {
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
 };
 
-// 🔥 NEW: Resolve patient using identifier OR patientId
 const resolvePatient = (patients, { patientId, identifier }) => {
   if (patientId) {
     return patients.find((p) => p.id === patientId);
@@ -32,12 +33,14 @@ const resolvePatient = (patients, { patientId, identifier }) => {
   return null;
 };
 
-// ✅ CREATE ENCOUNTER HANDLER
+// ===============================
+// CREATE ENCOUNTER
+// ===============================
+
 export const createEncounterHandler = (req, res) => {
   try {
     const { patientId, identifier, type, notes } = req.body;
 
-    // 🔒 Validation: at least one must exist
     if (!patientId && !identifier) {
       return res.status(400).json({
         error: "patientId or identifier required",
@@ -45,8 +48,6 @@ export const createEncounterHandler = (req, res) => {
     }
 
     const patients = readJSON(patientsFile);
-
-    // 🔥 Resolve patient
     const patient = resolvePatient(patients, { patientId, identifier });
 
     if (!patient) {
@@ -67,6 +68,7 @@ export const createEncounterHandler = (req, res) => {
       },
       type: type || "outpatient",
       notes: notes || "",
+      state: "created",
       createdAt: new Date().toISOString(),
     };
 
@@ -77,63 +79,44 @@ export const createEncounterHandler = (req, res) => {
       message: "Encounter created successfully",
       encounter: newEncounter,
     });
+
   } catch (error) {
     console.error("Create Encounter Error:", error);
-    return res.status(500).json({
-      error: "Internal server error",
-    });
+    return res.status(500).json({ error: "Internal server error" });
   }
 };
 
-export const addNotesHandler = (req, res) => {
+// ===============================
+// SET STAGE
+// ===============================
+
+export const setEncounterStageHandler = (req, res) => {
   try {
     const { id } = req.params;
-    const { notes } = req.body;
-
-    if (!notes) {
-      return res.status(400).json({
-        error: "Notes required"
-      });
-    }
+    const { stage } = req.body;
 
     const encounters = readJSON(encountersFile);
-
     const encounter = encounters.find(e => e.id === id);
 
     if (!encounter) {
-      return res.status(404).json({
-        error: "Encounter not found"
-      });
+      return res.status(404).json({ error: "Encounter not found" });
     }
 
-    if (!encounter.notesHistory) {
-      encounter.notesHistory = [];
-    }
-
-    encounter.notesHistory.push({
-      note: notes,
-      createdAt: new Date().toISOString()
-    });
+    encounter.state = stage;
 
     writeJSON(encountersFile, encounters);
 
-    return res.json({
-      message: "Notes added",
-      encounter
-    });
+    return res.json({ message: "Stage updated", encounter });
 
   } catch (err) {
-    console.error("Notes error:", err);
-
-    return res.status(500).json({
-      error: "Failed to add notes"
-    });
+    return res.status(500).json({ error: "Failed to set stage" });
   }
 };
 
-// =============================================
-// ADD VITALS
-// =============================================
+// ===============================
+// VITALS
+// ===============================
+
 export const addVitalsHandler = (req, res) => {
   try {
     const { id } = req.params;
@@ -157,9 +140,10 @@ export const addVitalsHandler = (req, res) => {
   }
 };
 
-// =============================================
-// ADD SYMPTOMS
-// =============================================
+// ===============================
+// SYMPTOMS
+// ===============================
+
 export const addSymptomsHandler = (req, res) => {
   try {
     const { id } = req.params;
@@ -183,9 +167,10 @@ export const addSymptomsHandler = (req, res) => {
   }
 };
 
-// =============================================
-// ADD NOTES
-// =============================================
+// ===============================
+// NOTES
+// ===============================
+
 export const addNotesHandler = (req, res) => {
   try {
     const { id } = req.params;
@@ -204,7 +189,7 @@ export const addNotesHandler = (req, res) => {
 
     encounter.notesHistory.push({
       note: notes,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
     });
 
     writeJSON(encountersFile, encounters);
@@ -216,9 +201,10 @@ export const addNotesHandler = (req, res) => {
   }
 };
 
-// =============================================
+// ===============================
 // TRIAGE
-// =============================================
+// ===============================
+
 export const addTriageHandler = (req, res) => {
   try {
     const { id } = req.params;
@@ -242,9 +228,10 @@ export const addTriageHandler = (req, res) => {
   }
 };
 
-// =============================================
+// ===============================
 // TREATMENT DECISION
-// =============================================
+// ===============================
+
 export const addTreatmentDecisionHandler = (req, res) => {
   try {
     const { id } = req.params;
@@ -268,9 +255,10 @@ export const addTreatmentDecisionHandler = (req, res) => {
   }
 };
 
-// =============================================
+// ===============================
 // TIMELINE
-// =============================================
+// ===============================
+
 export const getEncounterTimelineHandler = (req, res) => {
   try {
     const { id } = req.params;
@@ -283,7 +271,7 @@ export const getEncounterTimelineHandler = (req, res) => {
     }
 
     return res.json({
-      timeline: encounter.timeline || []
+      timeline: encounter.timeline || [],
     });
 
   } catch (err) {
