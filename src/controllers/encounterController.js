@@ -84,3 +84,49 @@ export const createEncounterHandler = (req, res) => {
     });
   }
 };
+
+export const addNotesHandler = (req, res) => {
+  try {
+    const { id } = req.params;
+    const { notes } = req.body;
+
+    if (!notes) {
+      return res.status(400).json({
+        error: "Notes required"
+      });
+    }
+
+    const encounters = readJSON(encountersFile);
+
+    const encounter = encounters.find(e => e.id === id);
+
+    if (!encounter) {
+      return res.status(404).json({
+        error: "Encounter not found"
+      });
+    }
+
+    if (!encounter.notesHistory) {
+      encounter.notesHistory = [];
+    }
+
+    encounter.notesHistory.push({
+      note: notes,
+      createdAt: new Date().toISOString()
+    });
+
+    writeJSON(encountersFile, encounters);
+
+    return res.json({
+      message: "Notes added",
+      encounter
+    });
+
+  } catch (err) {
+    console.error("Notes error:", err);
+
+    return res.status(500).json({
+      error: "Failed to add notes"
+    });
+  }
+};
