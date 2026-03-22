@@ -8,10 +8,8 @@ GENERATE DOCTOR SOAN
 =========================================
 */
 
-export const createDoctorSOANHandler = async (req, res) => {
-
+export const createDoctorSoanHandler = async (req, res) => {
   try {
-
     const encounterId = req.params.id;
 
     const encounter = await getEncounterById(encounterId);
@@ -29,11 +27,9 @@ export const createDoctorSOANHandler = async (req, res) => {
     */
 
     if (!canTransition(encounter.state, "treatment_decision")) {
-
       return res.status(400).json({
         error: "Doctor consultation must happen first"
       });
-
     }
 
     /*
@@ -43,14 +39,12 @@ export const createDoctorSOANHandler = async (req, res) => {
     */
 
     const lastDoctorNote =
-      encounter.doctorNotes[encounter.doctorNotes.length - 1];
+      encounter.doctorNotes?.[encounter.doctorNotes.length - 1];
 
     if (!lastDoctorNote) {
-
       return res.status(400).json({
         error: "Doctor notes required before generating SOAN"
       });
-
     }
 
     /*
@@ -64,17 +58,11 @@ export const createDoctorSOANHandler = async (req, res) => {
     }
 
     encounter.soan.doctor = {
-
       subjective: lastDoctorNote.consultationNotes || "",
-
       objective: encounter.vitals || {},
-
       assessment: lastDoctorNote.assessment || "",
-
       nextSteps: lastDoctorNote.diagnosis || "",
-
       createdAt: new Date().toISOString()
-
     };
 
     encounter.state = "treatment_decision";
@@ -99,20 +87,17 @@ export const createDoctorSOANHandler = async (req, res) => {
 
     await updateEncounter(encounterId, encounter);
 
-    res.json({
+    return res.json({
       status: "doctor_soan_generated",
       encounterId,
       soan: encounter.soan.doctor
     });
 
   } catch (err) {
-
     console.error("Doctor SOAN error:", err);
 
-    res.status(500).json({
+    return res.status(500).json({
       error: "Failed to generate doctor SOAN"
     });
-
   }
-
 };
