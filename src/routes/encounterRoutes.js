@@ -1,15 +1,14 @@
 import express from "express";
 
 import {
-createEncounterHandler,
-setEncounterStageHandler,
-addVitalsHandler,
-addSymptomsHandler,
-addNotesHandler,
-addDoctorNotesHandler,
-addTriageHandler,
-addTreatmentDecisionHandler,
-getEncounterTimelineHandler
+  createEncounterHandler,
+  setEncounterStageHandler,
+  addVitalsHandler,
+  addSymptomsHandler,
+  addNotesHandler,
+  addTriageHandler,
+  addTreatmentDecisionHandler,
+  getEncounterTimelineHandler
 } from "../controllers/encounterController.js";
 
 const router = express.Router();
@@ -36,7 +35,7 @@ router.post("/:id/symptoms", addSymptomsHandler);
 
 router.post("/:id/notes", addNotesHandler);
 
-router.post("/:id/doctor-notes", addDoctorNotesHandler);
+// ❌ REMOVED: doctor-notes (moved to doctorNotesRoutes.js)
 
 router.post("/:id/triage", addTriageHandler);
 
