@@ -8,7 +8,7 @@ GENERATE DOCTOR SOAN
 =========================================
 */
 
-export const createDoctorSoanHandler = async (req, res) => {
+export const createDoctorSOANHandler = async (req, res) => {
   try {
     const encounterId = req.params.id;
 
