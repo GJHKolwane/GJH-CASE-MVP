@@ -26,6 +26,7 @@ export const createPatientHandler = async (req, res) => {
       system
     } = req.body;
 
+    // ✅ VALIDATION
     if (!identifier || !fullName) {
       return res.status(400).json({
         error: "identifier and fullName are required"
@@ -34,7 +35,7 @@ export const createPatientHandler = async (req, res) => {
 
     /*
     =========================================
-    NORMALIZE TO FHIR-LIKE STRUCTURE
+    CORRECT FHIR-LIKE STRUCTURE (FLAT VALUE)
     =========================================
     */
 
@@ -45,7 +46,7 @@ export const createPatientHandler = async (req, res) => {
       identifier: [
         {
           system: system || "GJH",
-          value: identifier
+          value: identifier   // 🔥 STRING ONLY (NO ARRAY)
         }
       ],
 
@@ -63,13 +64,13 @@ export const createPatientHandler = async (req, res) => {
 
     });
 
-    res.json(patient);
+    return res.status(201).json(patient);
 
   } catch (error) {
 
     console.error("createPatientHandler error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       error: "Failed to create patient"
     });
 
@@ -90,13 +91,13 @@ export const getPatientsHandler = async (req, res) => {
 
     const patients = await getPatients();
 
-    res.json(patients);
+    return res.json(patients);
 
   } catch (error) {
 
     console.error("getPatientsHandler error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       error: "Failed to retrieve patients"
     });
 
@@ -123,13 +124,13 @@ export const getPatientHandler = async (req, res) => {
       });
     }
 
-    res.json(patient);
+    return res.json(patient);
 
   } catch (error) {
 
     console.error("getPatientHandler error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       error: "Failed to retrieve patient"
     });
 
@@ -155,13 +156,13 @@ export const searchPatientsHandler = async (req, res) => {
       name
     });
 
-    res.json(patients);
+    return res.json(patients);
 
   } catch (error) {
 
     console.error("searchPatientsHandler error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       error: "Search failed"
     });
 
