@@ -1,14 +1,15 @@
 import express from "express";
-import { createDoctorSOANHandler } from "../controllers/doctorSoanController.js";
+import { doctorSOANHandler } from "../handlers/doctor.handler.js";
 
 const router = express.Router();
 
 /*
 =========================================
-POST /encounters/:id/doctor-soan
+AI DRAFT SOAN
+POST /encounters/:id/doctor/soan
 =========================================
 */
 
-router.post("/:id/doctor-soan", createDoctorSOANHandler);
+router.post("/:id/doctor/soan", doctorSOANHandler);
 
 export default router;
