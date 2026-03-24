@@ -8,6 +8,7 @@ ENHANCED WITH:
 - Auto AI triage triggering
 - Escalation logic
 - Case state updates
+- AI + DOCTOR COLLABORATIVE SOAN FLOW
 - FULL PRESCRIPTION → PHARMACY FLOW
 */
 
@@ -31,14 +32,34 @@ const transitions = {
 
   doctor_escalated: ["doctor_consultation"],
 
-  doctor_consultation: ["treatment_decision"],
+  /*
+  =================================================
+  🔥 AI + DOCTOR SOAN FLOW (NEW)
+  =================================================
+  */
+
+  // Doctor starts consultation → AI draft
+  doctor_consultation: ["draft_soan_generated"],
+
+  // AI draft ready → waiting for doctor input
+  draft_soan_generated: ["awaiting_doctor_review"],
+
+  // Doctor reviewed → final SOAN completed
+  awaiting_doctor_review: ["final_soan_completed"],
+
+  // Final SOAN → proceed to treatment
+  final_soan_completed: ["treatment_decision"],
+
+  /*
+  =================================================
+  TREATMENT → PHARMACY FLOW
+  =================================================
+  */
 
   treatment_decision: ["prescription_issued"],
 
-  // ✅ FIX ADDED (PHARMACY BRIDGE)
   prescription_issued: ["pharmacy_processing"],
 
-  // ✅ FINAL COMPLETION
   pharmacy_processing: ["completed"],
 };
 
