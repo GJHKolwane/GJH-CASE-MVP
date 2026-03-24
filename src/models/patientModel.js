@@ -15,16 +15,17 @@ export const createPatient = async (data) => {
 
     id: uuidv4(),
 
-    identifier: [
-      {
-        system: data.system || "https://health.gov.bw/omang",
-        value: data.identifier
-      }
-    ],
+    /*
+    =========================================
+    TRUST CONTROLLER STRUCTURE
+    =========================================
+    */
+
+    identifier: data.identifier,   // 🔥 FIXED (NO WRAPPING)
 
     name: [
       {
-        text: data.fullName
+        text: data.name || data.fullName
       }
     ],
 
