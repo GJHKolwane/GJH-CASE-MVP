@@ -1,15 +1,14 @@
 import express from "express";
-import { doctorSOANHandler } from "../handlers/doctor.handler.js";
+import { doctorSOANProxyHandler } from "../controllers/doctorSoanProxyController.js";
 
 const router = express.Router();
 
 /*
 =========================================
-AI DRAFT SOAN
-POST /encounters/:id/doctor/soan
+AI DRAFT SOAN (via orchestrator)
 =========================================
 */
 
-router.post("/:id/doctor/soan", doctorSOANHandler);
+router.post("/:id/doctor/soan", doctorSOANProxyHandler);
 
 export default router;
