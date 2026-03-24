@@ -5,11 +5,19 @@ const router = express.Router();
 
 /*
 ================================================
-POST /encounters/:id/doctor-notes
+⚠️ DEPRECATED — LEGACY DOCTOR NOTES
 ================================================
-Stores doctor consultation + clinical reasoning
+POST /encounters/:id/doctor-notes
+
+- Manual doctor input
+- NOT part of AI-assisted workflow
+- Will be removed after full migration
+================================================
 */
 
-router.post("/:id/doctor-notes", createDoctorNotesHandler);
+router.post("/:id/doctor-notes", (req, res, next) => {
+  console.warn("⚠️ Deprecated endpoint used: /doctor-notes");
+  next();
+}, createDoctorNotesHandler);
 
 export default router;
