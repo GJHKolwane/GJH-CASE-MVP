@@ -5,12 +5,13 @@
   "main": "src/server.js",
   "type": "module",
   "scripts": {
-  "start": "node gjh-case-mcp/src/server.js"
+    "start": "node gjh-case-mcp/src/server.js"
   },
   "dependencies": {
-  "cors": "^2.8.5",
-  "express": "^4.19.2",
-  "fs-extra": "^11.2.0",
-  "uuid": "^9.0.1"
+    "axios": "^1.13.6",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "fs-extra": "^11.2.0",
+    "uuid": "^9.0.1"
   }
-  }
+}
