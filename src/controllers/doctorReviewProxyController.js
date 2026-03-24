@@ -6,7 +6,7 @@ export const doctorReviewProxyHandler = async (req, res) => {
     const { approved, edits } = req.body;
 
     const response = await axios.post(
-      "http://localhost:8080/doctor/review",
+      "http://localhost:8087/doctor/review",
       {
         encounterId: id,
         approved,
