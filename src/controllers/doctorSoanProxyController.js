@@ -13,7 +13,7 @@ export const doctorSOANProxyHandler = async (req, res) => {
 
     // 🔥 Call AI Orchestrator
     const response = await axios.post(
-      "http://localhost:8080/doctor/soan", // ← orchestrator endpoint
+      "http://localhost:8087/doctor/soan", // ← orchestrator endpoint
       {
         encounterId: id,
         triage,
