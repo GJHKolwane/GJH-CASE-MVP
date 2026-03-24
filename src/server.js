@@ -24,6 +24,7 @@ import doctorSoanRoutes from "./routes/doctorSoanRoutes.js";
 import treatmentDecisionRoutes from "./routes/treatmentDecisionRoutes.js";
 
 import prescriptionRoutes from "./routes/prescriptionRoutes.js";
+import doctorReviewRoutes from "./routes/doctorReviewRoutes.js";
 
 /*
 =========================================
@@ -66,6 +67,7 @@ DOCTOR WORKFLOW
 
 app.use("/encounters", doctorNotesRoutes);
 app.use("/encounters", doctorSoanRoutes);
+app.use("/encounters", doctorReviewRoutes);
 
 /*
 =========================================
