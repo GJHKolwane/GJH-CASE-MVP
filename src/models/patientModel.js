@@ -2,8 +2,9 @@ import { v4 as uuidv4 } from "uuid";
 import { readPatients, writePatients } from "../database/db.js";
 
 /*
-CREATE PATIENT
-FHIR-Compatible
+====================================================
+CREATE PATIENT (FHIR + IDENTITY METADATA)
+====================================================
 */
 
 export const createPatient = async (data) => {
@@ -17,15 +18,19 @@ export const createPatient = async (data) => {
 
     /*
     =========================================
-    TRUST CONTROLLER STRUCTURE
+    FHIR IDENTIFIER
     =========================================
     */
+    identifier: data.identifier || [],
 
-    identifier: data.identifier,   // 🔥 FIXED (NO WRAPPING)
-
+    /*
+    =========================================
+    NAME (FHIR STRUCTURE)
+    =========================================
+    */
     name: [
       {
-        text: data.name || data.fullName
+        text: data.name || data.fullName || null
       }
     ],
 
@@ -37,7 +42,15 @@ export const createPatient = async (data) => {
 
     address: data.address || [],
 
-    createdAt: new Date()
+    /*
+    =========================================
+    🔥 IDENTITY METADATA (NEW)
+    =========================================
+    */
+    meta: {
+      identityLevel: data.identityLevel || null,
+      createdAt: new Date().toISOString()
+    }
   };
 
   patients.push(patient);
@@ -47,20 +60,20 @@ export const createPatient = async (data) => {
   return patient;
 };
 
-
 /*
+====================================================
 GET ALL PATIENTS
+====================================================
 */
 
 export const getPatients = async () => {
-
   return await readPatients();
-
 };
 
-
 /*
+====================================================
 GET PATIENT BY ID
+====================================================
 */
 
 export const getPatientById = async (id) => {
@@ -68,13 +81,12 @@ export const getPatientById = async (id) => {
   const patients = await readPatients();
 
   return patients.find(p => p.id === id);
-
 };
 
-
 /*
+====================================================
 SEARCH PATIENTS
-By Identifier OR Name
+====================================================
 */
 
 export const searchPatients = async ({ identifier, name }) => {
@@ -82,23 +94,18 @@ export const searchPatients = async ({ identifier, name }) => {
   const patients = await readPatients();
 
   if (identifier) {
-
     return patients.filter(p =>
       p.identifier?.some(i => i.value === identifier)
     );
-
   }
 
   if (name) {
-
     const search = name.toLowerCase();
 
     return patients.filter(p =>
       p.name?.[0]?.text?.toLowerCase().includes(search)
     );
-
   }
 
   return [];
-
 };
