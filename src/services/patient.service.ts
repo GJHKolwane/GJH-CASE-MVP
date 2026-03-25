@@ -1,38 +1,13 @@
-import fs from "fs";
-import path from "path";
-import crypto from "crypto";
-import { v4 as uuidv4 } from "uuid";
+
+import {
+  createPatient,
+  searchPatients,
+  getPatients
+} from "../models/patientModel.js";
 
 /*
 ====================================================
-DATA STORE (CASE-MCP STATE)
-====================================================
-*/
-
-const DATA_PATH = path.join(process.cwd(), "data", "patients.json");
-
-/*
-====================================================
-UTILS: LOAD / SAVE (PERSISTENT)
-====================================================
-*/
-
-function loadPatients(): any[] {
-  if (!fs.existsSync(DATA_PATH)) {
-    fs.writeFileSync(DATA_PATH, JSON.stringify([]));
-  }
-
-  const raw = fs.readFileSync(DATA_PATH, "utf-8");
-  return JSON.parse(raw || "[]");
-}
-
-function savePatients(patients: any[]) {
-  fs.writeFileSync(DATA_PATH, JSON.stringify(patients, null, 2));
-}
-
-/*
-====================================================
-NORMALIZATION (CRITICAL FOR MATCHING)
+NORMALIZATION
 ====================================================
 */
 
@@ -48,36 +23,33 @@ function normalizeDate(date?: string) {
 
 /*
 ====================================================
-SEARCH: IDENTIFIER (LEVEL 1)
+SEARCH BY IDENTIFIER (FHIR STRUCTURE)
 ====================================================
 */
 
-function searchPatientsByIdentifier(identifier: string) {
-  const patients = loadPatients();
-
-  return patients.find(
-    (p) => p.identifier && p.identifier === identifier
-  );
+async function findByIdentifier(identifier: string) {
+  const results = await searchPatients({ identifier });
+  return results?.[0] || null;
 }
 
 /*
 ====================================================
-SEARCH: DEMOGRAPHICS (LEVEL 2)
+SEARCH BY DEMOGRAPHICS
 ====================================================
 */
 
-function searchPatientsByDemographics(input: {
+async function findByDemographics(input: {
   fullName?: string;
   birthDate?: string;
   gender?: string;
 }) {
-  const patients = loadPatients();
+  const patients = await getPatients();
 
   const name = normalizeName(input.fullName);
   const dob = normalizeDate(input.birthDate);
 
   return patients.filter((p) => {
-    const pName = normalizeName(p.fullName);
+    const pName = normalizeName(p.name?.[0]?.text);
     const pDob = normalizeDate(p.birthDate);
 
     return pName === name && pDob === dob;
@@ -86,47 +58,7 @@ function searchPatientsByDemographics(input: {
 
 /*
 ====================================================
-CREATE PATIENT (FHIR-ALIGNED STRUCTURE)
-====================================================
-*/
-
-function createPatient(data: {
-  identifier?: string;
-  fullName?: string;
-  birthDate?: string;
-  gender?: string;
-  identityLevel: "verified" | "probable_match" | "temporary";
-}) {
-  const patients = loadPatients();
-
-  const newPatient = {
-    id: uuidv4(),
-
-    // FHIR-ready identifier
-    identifier: data.identifier || null,
-
-    // Demographics
-    fullName: data.fullName || null,
-    birthDate: data.birthDate || null,
-    gender: data.gender || null,
-
-    // Meta
-    meta: {
-      identityLevel: data.identityLevel,
-      createdAt: new Date().toISOString(),
-      versionId: crypto.randomUUID()
-    }
-  };
-
-  patients.push(newPatient);
-  savePatients(patients);
-
-  return newPatient;
-}
-
-/*
-====================================================
-TEMP ID GENERATION (OFFLINE SAFE)
+TEMP ID
 ====================================================
 */
 
@@ -136,7 +68,7 @@ function generateTempId() {
 
 /*
 ====================================================
-CORE ENGINE: RESOLVE IDENTITY
+CORE ENGINE
 ====================================================
 */
 
@@ -155,7 +87,7 @@ export async function resolvePatientIdentity(input: {
     ========================================
     */
     if (identifier) {
-      const existing = searchPatientsByIdentifier(identifier);
+      const existing = await findByIdentifier(identifier);
 
       if (existing) {
         return {
@@ -164,13 +96,19 @@ export async function resolvePatientIdentity(input: {
         };
       }
 
-      const created = createPatient({
-        identifier,
+      const created = await createPatient({
+        identifier: [
+          {
+            system: "GJH",
+            value: identifier
+          }
+        ],
         fullName,
-        birthDate,
         gender,
-        identityLevel: "verified"
+        birthDate
       });
+
+      created.meta = { identityLevel: "verified" };
 
       return {
         patient: created,
@@ -184,7 +122,7 @@ export async function resolvePatientIdentity(input: {
     ========================================
     */
     if (fullName && birthDate) {
-      const matches = searchPatientsByDemographics({
+      const matches = await findByDemographics({
         fullName,
         birthDate,
         gender
@@ -197,12 +135,13 @@ export async function resolvePatientIdentity(input: {
         };
       }
 
-      const created = createPatient({
+      const created = await createPatient({
         fullName,
-        birthDate,
         gender,
-        identityLevel: "probable_match"
+        birthDate
       });
+
+      created.meta = { identityLevel: "probable_match" };
 
       return {
         patient: created,
@@ -217,10 +156,16 @@ export async function resolvePatientIdentity(input: {
     */
     const tempId = generateTempId();
 
-    const created = createPatient({
-      identifier: tempId,
-      identityLevel: "temporary"
+    const created = await createPatient({
+      identifier: [
+        {
+          system: "TEMP",
+          value: tempId
+        }
+      ]
     });
+
+    created.meta = { identityLevel: "temporary" };
 
     return {
       patient: created,
@@ -228,36 +173,24 @@ export async function resolvePatientIdentity(input: {
     };
 
   } catch (error) {
-    console.error("IDENTITY ENGINE FAILURE:", error);
+    console.error("IDENTITY ENGINE ERROR:", error);
 
-    /*
-    🔥 FAILSAFE — NEVER BREAK INTAKE
-    */
     const tempId = generateTempId();
 
-    const fallback = createPatient({
-      identifier: tempId,
-      identityLevel: "temporary"
+    const fallback = await createPatient({
+      identifier: [
+        {
+          system: "TEMP",
+          value: tempId
+        }
+      ]
     });
+
+    fallback.meta = { identityLevel: "temporary" };
 
     return {
       patient: fallback,
       identityLevel: "temporary"
     };
   }
-}
-
-/*
-====================================================
-EXPLICIT TEMP (OPTIONAL)
-====================================================
-*/
-
-export function createTemporaryPatient() {
-  const tempId = generateTempId();
-
-  return createPatient({
-    identifier: tempId,
-    identityLevel: "temporary"
-  });
-    }
+        }
