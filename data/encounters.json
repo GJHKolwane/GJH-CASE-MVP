@@ -42,5 +42,41 @@
       "priority": "URGENT",
       "notes": "Chest pain with abnormal vitals"
     }
+  },
+  {
+    "id": "c1ec1b71-c92a-4056-9000-cb00c2998936",
+    "resourceType": "Encounter",
+    "status": "in-progress",
+    "subject": {
+      "reference": "Patient/958fb1c0-71c3-4bd5-afe3-db4845370394",
+      "identifier": [
+        {
+          "system": "GJH",
+          "value": "A-LOW-001"
+        }
+      ]
+    },
+    "type": "outpatient",
+    "notes": "",
+    "state": "created",
+    "createdAt": "2026-03-25T14:24:36.473Z"
+  },
+  {
+    "id": "10c0061d-5d20-4d30-bcde-06a1d509596c",
+    "resourceType": "Encounter",
+    "status": "in-progress",
+    "subject": {
+      "reference": "Patient/fc0402df-eeaa-4d86-982a-d52db6d01c4c",
+      "identifier": [
+        {
+          "system": "GJH",
+          "value": "A-LOW-002"
+        }
+      ]
+    },
+    "type": "outpatient",
+    "notes": "",
+    "state": "created",
+    "createdAt": "2026-03-25T15:42:42.228Z"
   }
 ]
