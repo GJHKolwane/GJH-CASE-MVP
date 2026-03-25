@@ -1,7 +1,7 @@
 import express from "express";
 
 import {
-  createPatientHandler,
+  resolvePatientHandler,
   getPatientsHandler,
   getPatientHandler,
   searchPatientsHandler
@@ -11,12 +11,18 @@ const router = express.Router();
 
 /*
 =========================================
-PATIENT ROUTES
+PATIENT ROUTES (NEW ARCHITECTURE)
 =========================================
 */
 
-router.post("/", createPatientHandler);
+/*
+🔥 CORE ENTRY POINT (REPLACES CREATE)
+*/
+router.post("/resolve", resolvePatientHandler);
 
+/*
+READ OPERATIONS (UNCHANGED)
+*/
 router.get("/", getPatientsHandler);
 
 router.get("/search", searchPatientsHandler);
