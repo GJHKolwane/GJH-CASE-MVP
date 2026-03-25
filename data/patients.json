@@ -1,14 +1,1 @@
-[
-  {
-    "resourceType": "Patient",
-    "id": "766dda9b-9274-4780-bfb3-6bd929723bab",
-    "name": "Suping Kolwane",
-    "gender": "male",
-    "birthDate": "1988-01-01",
-    "telecom": [
-      "+26700000000"
-    ],
-    "address": [],
-    "createdAt": "2026-03-09T20:08:38.289Z"
-  }
-]
+[]
