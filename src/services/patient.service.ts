@@ -1,4 +1,3 @@
-
 import {
   createPatient,
   searchPatients,
@@ -11,12 +10,12 @@ NORMALIZATION
 ====================================================
 */
 
-function normalizeName(name?: string) {
+function normalizeName(name) {
   if (!name) return null;
   return name.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function normalizeDate(date?: string) {
+function normalizeDate(date) {
   if (!date) return null;
   return new Date(date).toISOString().split("T")[0];
 }
@@ -27,7 +26,7 @@ SEARCH BY IDENTIFIER (FHIR STRUCTURE)
 ====================================================
 */
 
-async function findByIdentifier(identifier: string) {
+async function findByIdentifier(identifier) {
   const results = await searchPatients({ identifier });
   return results?.[0] || null;
 }
@@ -38,15 +37,11 @@ SEARCH BY DEMOGRAPHICS
 ====================================================
 */
 
-async function findByDemographics(input: {
-  fullName?: string;
-  birthDate?: string;
-  gender?: string;
-}) {
+async function findByDemographics({ fullName, birthDate, gender }) {
   const patients = await getPatients();
 
-  const name = normalizeName(input.fullName);
-  const dob = normalizeDate(input.birthDate);
+  const name = normalizeName(fullName);
+  const dob = normalizeDate(birthDate);
 
   return patients.filter((p) => {
     const pName = normalizeName(p.name?.[0]?.text);
@@ -58,7 +53,7 @@ async function findByDemographics(input: {
 
 /*
 ====================================================
-TEMP ID
+TEMP ID GENERATION
 ====================================================
 */
 
@@ -68,16 +63,11 @@ function generateTempId() {
 
 /*
 ====================================================
-CORE ENGINE
+CORE ENGINE: RESOLVE PATIENT IDENTITY
 ====================================================
 */
 
-export async function resolvePatientIdentity(input: {
-  identifier?: string;
-  fullName?: string;
-  birthDate?: string;
-  gender?: string;
-}) {
+export async function resolvePatientIdentity(input) {
   const { identifier, fullName, birthDate, gender } = input;
 
   try {
@@ -105,10 +95,9 @@ export async function resolvePatientIdentity(input: {
         ],
         fullName,
         gender,
-        birthDate
+        birthDate,
+        identityLevel: "verified"
       });
-
-      created.meta = { identityLevel: "verified" };
 
       return {
         patient: created,
@@ -138,10 +127,9 @@ export async function resolvePatientIdentity(input: {
       const created = await createPatient({
         fullName,
         gender,
-        birthDate
+        birthDate,
+        identityLevel: "probable_match"
       });
-
-      created.meta = { identityLevel: "probable_match" };
 
       return {
         patient: created,
@@ -151,7 +139,7 @@ export async function resolvePatientIdentity(input: {
 
     /*
     ========================================
-    LEVEL 3 — TEMP
+    LEVEL 3 — TEMPORARY
     ========================================
     */
     const tempId = generateTempId();
@@ -162,10 +150,9 @@ export async function resolvePatientIdentity(input: {
           system: "TEMP",
           value: tempId
         }
-      ]
+      ],
+      identityLevel: "temporary"
     });
-
-    created.meta = { identityLevel: "temporary" };
 
     return {
       patient: created,
@@ -175,6 +162,9 @@ export async function resolvePatientIdentity(input: {
   } catch (error) {
     console.error("IDENTITY ENGINE ERROR:", error);
 
+    /*
+    🔥 FAILSAFE — NEVER BREAK INTAKE
+    */
     const tempId = generateTempId();
 
     const fallback = await createPatient({
@@ -183,10 +173,9 @@ export async function resolvePatientIdentity(input: {
           system: "TEMP",
           value: tempId
         }
-      ]
+      ],
+      identityLevel: "temporary"
     });
-
-    fallback.meta = { identityLevel: "temporary" };
 
     return {
       patient: fallback,
