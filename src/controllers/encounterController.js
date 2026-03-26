@@ -23,7 +23,7 @@ const writeJSON = (file, data) => {
 
 /*
 ================================================
-CREATE ENCOUNTER (🔥 UPDATED)
+CREATE ENCOUNTER (🔥 DEBUG SAFE)
 ================================================
 */
 
@@ -38,12 +38,23 @@ export const createEncounterHandler = async (req, res) => {
       notes
     } = req.body;
 
+    // 🧠 DEBUG INPUT (SAFE)
+    console.log("🟡 INPUT RECEIVED:", {
+      identifier,
+      fullName,
+      birthDate,
+      gender
+    });
+
     const { patient, identityLevel } = await resolvePatientIdentity({
       identifier,
       fullName,
       birthDate,
       gender
     });
+
+    // 🧠 DEBUG OUTPUT (SAFE)
+    console.log("🟢 RESOLVED PATIENT:", { patient, identityLevel });
 
     const encounters = readJSON(encountersFile);
 
@@ -76,7 +87,9 @@ export const createEncounterHandler = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Create Encounter Error:", error);
+    // 🔥 FULL ERROR VISIBILITY (CRITICAL)
+    console.error("🔥 CREATE ENCOUNTER ERROR:", error);
+
     return res.status(500).json({ error: "Failed to create encounter" });
   }
 };
