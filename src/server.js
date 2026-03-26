@@ -59,7 +59,14 @@ app.use("/encounters", notesRoutes);
 
 app.use("/encounters", triageRoutes);
 app.use("/encounters", soanRoutes);
-app.use("/", labsRoutes);
+
+/*
+=========================================
+LABS (FIXED MOUNT)
+=========================================
+*/
+
+app.use("/encounters", labsRoutes);
 
 /*
 =========================================
@@ -96,7 +103,5 @@ SERVER
 const PORT = 5050;
 
 app.listen(PORT, () => {
-
   console.log(`GJH Case MCP running on port ${PORT}`);
-
 });
