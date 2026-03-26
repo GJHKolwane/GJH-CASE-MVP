@@ -10,7 +10,8 @@ ENHANCED WITH:
 - Case state updates
 - AI + DOCTOR COLLABORATIVE SOAN FLOW
 - FULL PRESCRIPTION → PHARMACY FLOW
-- 🧪 LAB INTELLIGENCE INTEGRATION (NEW)
+- 🧪 LAB INTELLIGENCE INTEGRATION
+- 🔥 SIGNATURE GOVERNANCE ENFORCEMENT (NEW)
 */
 
 import axios from "axios";
@@ -49,11 +50,21 @@ const transitions = {
 
   /*
   =================================================
-  TREATMENT → PHARMACY FLOW
+  🧪 LAB LOOP (NEW GOVERNANCE AWARE)
   =================================================
   */
 
-  treatment_decision: ["prescription_issued"],
+  treatment_decision: ["prescription_issued", "lab_ordered"],
+
+  lab_ordered: ["lab_result_received"],
+
+  lab_result_received: ["awaiting_doctor_review"],
+
+  /*
+  =================================================
+  PHARMACY FLOW
+  =================================================
+  */
 
   prescription_issued: ["pharmacy_processing"],
 
@@ -132,7 +143,21 @@ async function triggerEscalation(patientCase) {
 
 /*
 ================================================
-🧪 LAB IMPACT ANALYSIS (NEW)
+🔥 SIGNATURE VALIDATION HELPERS (NEW)
+================================================
+*/
+
+function hasDoctorSignature(order) {
+  return order?.requestedBy?.doctorId;
+}
+
+function hasLabTechSignature(result) {
+  return result?.recordedBy?.labTechId;
+}
+
+/*
+================================================
+🧪 LAB IMPACT ANALYSIS (ENHANCED)
 ================================================
 */
 
@@ -141,8 +166,16 @@ function analyzeLabImpact(patientCase) {
 
   if (!results.length) return null;
 
+  // 🔥 FILTER ONLY VALID (SIGNED) RESULTS
+  const validResults = results.filter(hasLabTechSignature);
+
+  if (!validResults.length) {
+    console.warn("⚠️ Lab results found but missing labTech signature");
+    return null;
+  }
+
   // Detect abnormal results
-  const abnormal = results.find(
+  const abnormal = validResults.find(
     r => r.interpretation === "high" || r.interpretation === "low"
   );
 
@@ -191,7 +224,23 @@ export async function processCaseState(patientCase) {
 
   /*
   --------------------------------------------
-  🧪 LAB IMPACT LOGIC (NEW)
+  🧪 LAB GOVERNANCE CHECK (NEW)
+  --------------------------------------------
+  */
+
+  const labOrders = updatedCase?.labs?.orders || [];
+
+  const unsignedOrders = labOrders.filter(
+    o => !hasDoctorSignature(o)
+  );
+
+  if (unsignedOrders.length) {
+    console.warn("⚠️ Found lab orders without doctor signature — ignored");
+  }
+
+  /*
+  --------------------------------------------
+  🧪 LAB IMPACT LOGIC
   --------------------------------------------
   */
 
@@ -225,4 +274,4 @@ export async function processCaseState(patientCase) {
   }
 
   return updatedCase;
-}
+      }
