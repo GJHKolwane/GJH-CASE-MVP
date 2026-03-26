@@ -10,6 +10,7 @@ ENHANCED WITH:
 - Case state updates
 - AI + DOCTOR COLLABORATIVE SOAN FLOW
 - FULL PRESCRIPTION → PHARMACY FLOW
+- 🧪 LAB INTELLIGENCE INTEGRATION (NEW)
 */
 
 import axios from "axios";
@@ -34,20 +35,16 @@ const transitions = {
 
   /*
   =================================================
-  🔥 AI + DOCTOR SOAN FLOW (NEW)
+  🔥 AI + DOCTOR SOAN FLOW
   =================================================
   */
 
-  // Doctor starts consultation → AI draft
   doctor_consultation: ["draft_soan_generated"],
 
-  // AI draft ready → waiting for doctor input
   draft_soan_generated: ["awaiting_doctor_review"],
 
-  // Doctor reviewed → final SOAN completed
   awaiting_doctor_review: ["final_soan_completed"],
 
-  // Final SOAN → proceed to treatment
   final_soan_completed: ["treatment_decision"],
 
   /*
@@ -107,7 +104,6 @@ async function triggerTriage(patientCase) {
 
     console.error("AI TRIAGE ERROR:", error.message);
 
-    // ✅ SAFE FALLBACK
     return {
       assessment: "AI unavailable",
       severity: "MEDIUM",
@@ -132,6 +128,36 @@ async function triggerEscalation(patientCase) {
   } catch (error) {
     console.error("ESCALATION ERROR:", error.message);
   }
+}
+
+/*
+================================================
+🧪 LAB IMPACT ANALYSIS (NEW)
+================================================
+*/
+
+function analyzeLabImpact(patientCase) {
+  const results = patientCase?.labs?.results || [];
+
+  if (!results.length) return null;
+
+  // Detect abnormal results
+  const abnormal = results.find(
+    r => r.interpretation === "high" || r.interpretation === "low"
+  );
+
+  if (abnormal) {
+    return {
+      requiresDoctor: true,
+      severity: "HIGH",
+      reason: "Abnormal lab result detected",
+      abnormalResult: abnormal
+    };
+  }
+
+  return {
+    requiresDoctor: false
+  };
 }
 
 /*
@@ -165,7 +191,24 @@ export async function processCaseState(patientCase) {
 
   /*
   --------------------------------------------
-  ESCALATION LOGIC
+  🧪 LAB IMPACT LOGIC (NEW)
+  --------------------------------------------
+  */
+
+  const labImpact = analyzeLabImpact(updatedCase);
+
+  if (labImpact?.requiresDoctor) {
+
+    console.log("🧪 Lab-triggered escalation:", labImpact.reason);
+
+    updatedCase = updateCaseStatus(updatedCase, "ESCALATED");
+
+    await triggerEscalation(updatedCase);
+  }
+
+  /*
+  --------------------------------------------
+  ESCALATION (TRIAGE-BASED)
   --------------------------------------------
   */
 
@@ -174,7 +217,7 @@ export async function processCaseState(patientCase) {
     updatedCase?.triage?.severity === "CRITICAL"
   ) {
 
-    console.log("🚨 Escalation triggered!");
+    console.log("🚨 Escalation triggered from triage!");
 
     updatedCase = updateCaseStatus(updatedCase, "ESCALATED");
 
