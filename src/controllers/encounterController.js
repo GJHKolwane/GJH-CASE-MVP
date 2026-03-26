@@ -5,6 +5,7 @@ import { resolvePatientIdentity } from "../services/patient.service.js";
 
 const dataDir = path.resolve("data");
 const encountersFile = path.join(dataDir, "encounters.json");
+const patientsFile = path.join(dataDir, "patients.json");
 
 /*
 ================================================
@@ -23,13 +24,14 @@ const writeJSON = (file, data) => {
 
 /*
 ================================================
-CREATE ENCOUNTER (🔥 DEBUG SAFE)
+CREATE ENCOUNTER (🔥 FIXED IDENTITY LOGIC)
 ================================================
 */
 
 export const createEncounterHandler = async (req, res) => {
   try {
     const {
+      patientId, // ✅ NEW PRIMARY PATH
       identifier,
       fullName,
       birthDate,
@@ -38,23 +40,48 @@ export const createEncounterHandler = async (req, res) => {
       notes
     } = req.body;
 
-    // 🧠 DEBUG INPUT (SAFE)
-    console.log("🟡 INPUT RECEIVED:", {
-      identifier,
-      fullName,
-      birthDate,
-      gender
-    });
+    let patient;
+    let identityLevel;
 
-    const { patient, identityLevel } = await resolvePatientIdentity({
-      identifier,
-      fullName,
-      birthDate,
-      gender
-    });
+    /*
+    =================================================
+    ✅ PRIORITY 1: USE EXISTING PATIENT
+    =================================================
+    */
+    if (patientId) {
+      const patients = readJSON(patientsFile);
+      const existingPatient = patients.find(p => p.id === patientId);
 
-    // 🧠 DEBUG OUTPUT (SAFE)
-    console.log("🟢 RESOLVED PATIENT:", { patient, identityLevel });
+      if (!existingPatient) {
+        return res.status(404).json({
+          error: "Patient not found — resolve patient first"
+        });
+      }
+
+      patient = existingPatient;
+      identityLevel = patient.meta?.identityLevel || "unknown";
+
+      console.log("🟢 USING EXISTING PATIENT:", patient.id);
+    }
+
+    /*
+    =================================================
+    ⚠️ FALLBACK: RESOLVE IF NO patientId
+    =================================================
+    */
+    else {
+      console.log("🟡 FALLBACK: Resolving patient identity...");
+
+      const result = await resolvePatientIdentity({
+        identifier,
+        fullName,
+        birthDate,
+        gender
+      });
+
+      patient = result.patient;
+      identityLevel = result.identityLevel;
+    }
 
     const encounters = readJSON(encountersFile);
 
@@ -63,31 +90,41 @@ export const createEncounterHandler = async (req, res) => {
       resourceType: "Encounter",
       status: "in-progress",
 
+      // ✅ CORRECT PATIENT LINK
       subject: {
         reference: `Patient/${patient.id}`,
-        identifier: patient.identifier || null
+        identifier: patient.identifier || []
       },
 
+      // ✅ PRESERVE TRUE IDENTITY
       identityLevel,
 
       type: type || "outpatient",
       notes: notes || "",
 
       state: "created",
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+
+      // 🔥 initialize structure (important for your system)
+      vitals: null,
+      symptoms: [],
+      labs: {
+        orders: [],
+        results: []
+      },
+      timeline: []
     };
 
     encounters.push(newEncounter);
     writeJSON(encountersFile, encounters);
 
     return res.status(201).json({
-      message: "Encounter created successfully",
+      message: "Encounter created successfully (identity preserved)",
       encounter: newEncounter,
       patient
     });
 
   } catch (error) {
-    // 🔥 FULL ERROR VISIBILITY (CRITICAL)
     console.error("🔥 CREATE ENCOUNTER ERROR:", error);
 
     return res.status(500).json({ error: "Failed to create encounter" });
@@ -155,32 +192,6 @@ SYMPTOMS
 export const addSymptomsHandler = (req, res) => {
   try {
     const { id } = req.params;
-    const { symptoms } = req.body;
-
-    const encounters = readJSON(encountersFile);
-    const encounter = encounters.find(e => e.id === id);
-
-    if (!encounter) return res.status(404).json({ error: "Encounter not found" });
-
-    encounter.symptoms = symptoms || [];
-    writeJSON(encountersFile, encounters);
-
-    return res.json({ message: "Symptoms added", encounter });
-
-  } catch {
-    return res.status(500).json({ error: "Failed to add symptoms" });
-  }
-};
-
-/*
-================================================
-NOTES
-================================================
-*/
-
-export const addNotesHandler = (req, res) => {
-  try {
-    const { id } = req.params;
     const { notes } = req.body;
 
     const encounters = readJSON(encountersFile);
@@ -188,92 +199,12 @@ export const addNotesHandler = (req, res) => {
 
     if (!encounter) return res.status(404).json({ error: "Encounter not found" });
 
-    if (!encounter.notesHistory) encounter.notesHistory = [];
-
-    encounter.notesHistory.push({
-      note: notes,
-      createdAt: new Date().toISOString()
-    });
-
+    encounter.symptoms = notes ? [notes] : [];
     writeJSON(encountersFile, encounters);
 
-    return res.json({ message: "Notes added", encounter });
+    return res.json({ message: "Symptoms added", encounter });
 
   } catch {
-    return res.status(500).json({ error: "Failed to add notes" });
-  }
-};
-
-/*
-================================================
-TRIAGE
-================================================
-*/
-
-export const addTriageHandler = (req, res) => {
-  try {
-    const { id } = req.params;
-    const triage = req.body;
-
-    const encounters = readJSON(encountersFile);
-    const encounter = encounters.find(e => e.id === id);
-
-    if (!encounter) return res.status(404).json({ error: "Encounter not found" });
-
-    encounter.triage = triage;
-    writeJSON(encountersFile, encounters);
-
-    return res.json({ message: "Triage added", encounter });
-
-  } catch {
-    return res.status(500).json({ error: "Failed to add triage" });
-  }
-};
-
-/*
-================================================
-TREATMENT DECISION
-================================================
-*/
-
-export const addTreatmentDecisionHandler = (req, res) => {
-  try {
-    const { id } = req.params;
-    const decision = req.body;
-
-    const encounters = readJSON(encountersFile);
-    const encounter = encounters.find(e => e.id === id);
-
-    if (!encounter) return res.status(404).json({ error: "Encounter not found" });
-
-    encounter.treatmentDecision = decision;
-    writeJSON(encountersFile, encounters);
-
-    return res.json({ message: "Treatment decision recorded", encounter });
-
-  } catch {
-    return res.status(500).json({ error: "Failed to add treatment decision" });
-  }
-};
-
-/*
-================================================
-TIMELINE
-================================================
-*/
-
-export const getEncounterTimelineHandler = (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const encounters = readJSON(encountersFile);
-    const encounter = encounters.find(e => e.id === id);
-
-    if (!encounter) return res.status(404).json({ error: "Encounter not found" });
-
-    return res.json({ timeline: encounter.timeline || [] });
-
-  } catch {
-    return res.status(500).json({ error: "Failed to fetch timeline" });
+    return res.status(500).json({ error: "Failed to add symptoms" });
   }
 };
