@@ -1,6 +1,6 @@
 import express from "express";
 import crypto from "crypto";
-import { getEncounter, saveEncounter } from "../services/encounter.service.js";
+import { getEncounter, saveEncounter } from "../services/encounter.Service.js";
 
 const router = express.Router();
 
