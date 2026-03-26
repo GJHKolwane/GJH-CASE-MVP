@@ -19,7 +19,18 @@ ENCOUNTERS
 =====================================
 */
 
-router.post("/", createEncounterHandler);
+// 🔥 ENFORCE patientId BEFORE hitting controller
+router.post("/", (req, res, next) => {
+  const { patientId } = req.body;
+
+  if (!patientId) {
+    return res.status(400).json({
+      error: "patientId is required — resolve patient first"
+    });
+  }
+
+  next();
+}, createEncounterHandler);
 
 router.post("/:id/stage", setEncounterStageHandler);
 
