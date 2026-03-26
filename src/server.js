@@ -17,6 +17,7 @@ import notesRoutes from "./routes/notesRoutes.js";
 import triageRoutes from "./routes/triageRoutes.js";
 
 import soanRoutes from "./routes/soanRoutes.js"; // Nurse SOAN
+import labsRoutes from "./routes/labs.routes.js";
 
 import doctorNotesRoutes from "./routes/doctorNotesRoutes.js";
 import doctorSoanRoutes from "./routes/doctorSoanRoutes.js";
@@ -58,6 +59,7 @@ app.use("/encounters", notesRoutes);
 
 app.use("/encounters", triageRoutes);
 app.use("/encounters", soanRoutes);
+app.use("/", labsRoutes);
 
 /*
 =========================================
