@@ -20,6 +20,7 @@ const writeJSON = (file, data) => {
 /*
 ================================================
 CREATE LAB ORDER (FHIR: ServiceRequest)
+ENHANCED: Doctor Signature Enforcement
 ================================================
 */
 
@@ -28,6 +29,15 @@ router.post("/:id/labs/service-request", (req, res) => {
     const encounterId = req.params.id;
     const labOrder = req.body;
 
+    const { doctorId } = labOrder;
+
+    // 🔥 MANDATORY DOCTOR ID
+    if (!doctorId) {
+      return res.status(400).json({
+        error: "doctorId is required to create lab order"
+      });
+    }
+
     const encounters = readJSON(encountersFile);
     const encounter = encounters.find(e => e.id === encounterId);
 
@@ -35,11 +45,12 @@ router.post("/:id/labs/service-request", (req, res) => {
       return res.status(404).json({ error: "Encounter not found" });
     }
 
-    // Initialize labs structure
     encounter.labs = encounter.labs || {
       orders: [],
       results: []
     };
+
+    const timestamp = new Date().toISOString();
 
     const newOrder = {
       id: crypto.randomUUID(),
@@ -49,7 +60,13 @@ router.post("/:id/labs/service-request", (req, res) => {
       code: labOrder.code || { text: "Unknown Test" },
       priority: labOrder.priority || "routine",
       subject: encounter.subject,
-      createdAt: new Date().toISOString()
+      createdAt: timestamp,
+
+      // 🔥 SIGNATURE LAYER
+      requestedBy: {
+        doctorId,
+        timestamp
+      }
     };
 
     encounter.labs.orders.push(newOrder);
@@ -58,14 +75,18 @@ router.post("/:id/labs/service-request", (req, res) => {
     encounter.timeline = encounter.timeline || [];
     encounter.timeline.push({
       event: "Lab order created",
-      data: newOrder,
-      timestamp: new Date().toISOString()
+      data: {
+        orderId: newOrder.id,
+        test: newOrder.code?.text,
+        doctorId
+      },
+      timestamp
     });
 
     writeJSON(encountersFile, encounters);
 
     return res.json({
-      message: "Lab order created",
+      message: "Lab order created with doctor signature",
       order: newOrder,
       encounterId
     });
@@ -82,6 +103,7 @@ router.post("/:id/labs/service-request", (req, res) => {
 /*
 ================================================
 STORE LAB RESULT (FHIR: Observation)
+ENHANCED: Lab Tech Signature + Intelligence Trigger
 ================================================
 */
 
@@ -89,6 +111,15 @@ router.post("/:id/labs/observation", (req, res) => {
   try {
     const encounterId = req.params.id;
     const labResult = req.body;
+
+    const { labTechId } = labResult;
+
+    // 🔥 MANDATORY LAB TECH ID
+    if (!labTechId) {
+      return res.status(400).json({
+        error: "labTechId is required to record lab result"
+      });
+    }
 
     const encounters = readJSON(encountersFile);
     const encounter = encounters.find(e => e.id === encounterId);
@@ -102,7 +133,14 @@ router.post("/:id/labs/observation", (req, res) => {
       results: []
     };
 
-    // Basic clinical interpretation
+    const timestamp = new Date().toISOString();
+
+    /*
+    --------------------------------------------
+    BASIC CLINICAL INTERPRETATION
+    --------------------------------------------
+    */
+
     let flag = "normal";
 
     if (labResult?.valueQuantity?.value !== undefined) {
@@ -120,25 +158,59 @@ router.post("/:id/labs/observation", (req, res) => {
       valueQuantity: labResult.valueQuantity,
       referenceRange: labResult.referenceRange || [],
       interpretation: flag,
-      createdAt: new Date().toISOString()
+      createdAt: timestamp,
+
+      // 🔥 SIGNATURE LAYER
+      recordedBy: {
+        labTechId,
+        timestamp
+      }
     };
 
     encounter.labs.results.push(newResult);
 
-    // Timeline integration
+    /*
+    --------------------------------------------
+    TIMELINE
+    --------------------------------------------
+    */
+
     encounter.timeline = encounter.timeline || [];
     encounter.timeline.push({
       event: "Lab result recorded",
-      data: newResult,
-      timestamp: new Date().toISOString()
+      data: {
+        resultId: newResult.id,
+        test: newResult.code?.text,
+        interpretation: flag,
+        labTechId
+      },
+      timestamp
     });
+
+    /*
+    --------------------------------------------
+    🔥 OPTIONAL (NEXT STEP READY)
+    Trigger escalation flag
+    --------------------------------------------
+    */
+
+    if (flag !== "normal") {
+      encounter.flags = encounter.flags || [];
+      encounter.flags.push({
+        type: "abnormal_lab",
+        severity: flag,
+        source: newResult.code?.text,
+        timestamp
+      });
+    }
 
     writeJSON(encountersFile, encounters);
 
     return res.json({
-      message: "Lab result stored",
+      message: "Lab result stored with lab technician signature",
       result: newResult,
-      encounterId
+      encounterId,
+      interpretation: flag
     });
 
   } catch (err) {
