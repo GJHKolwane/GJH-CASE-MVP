@@ -4,11 +4,11 @@ import {
   createEncounter as createEncounterService
 } from "../services/encounterService.js";
 
+import { processCaseState } from "../services/clinicalStateMachine.js";
+
 /*
 ================================================
 CREATE ENCOUNTER
-================================================
-POST /encounters
 ================================================
 */
 
@@ -43,8 +43,6 @@ export const createEncounter = (req, res) => {
 ================================================
 GET ENCOUNTER
 ================================================
-GET /encounters/:id
-================================================
 */
 
 export const fetchEncounter = (req, res) => {
@@ -59,9 +57,7 @@ export const fetchEncounter = (req, res) => {
       });
     }
 
-    return res.json({
-      encounter
-    });
+    return res.json({ encounter });
 
   } catch (err) {
     console.error("FETCH ENCOUNTER ERROR:", err.message);
@@ -75,13 +71,11 @@ export const fetchEncounter = (req, res) => {
 
 /*
 ================================================
-UPDATE ENCOUNTER STAGE (GENERIC STATE UPDATE)
-================================================
-PATCH /encounters/:id/stage
+UPDATE ENCOUNTER STAGE
 ================================================
 */
 
-export const updateEncounterStage = (req, res) => {
+export const updateEncounterStage = async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
@@ -94,18 +88,19 @@ export const updateEncounterStage = (req, res) => {
       });
     }
 
-    // Merge updates into encounter
     const updatedEncounter = {
       ...encounter,
       ...updates,
       updatedAt: new Date().toISOString()
     };
 
-    saveEncounter(updatedEncounter);
+    const processed = await processCaseState(updatedEncounter);
+
+    saveEncounter(processed);
 
     return res.json({
       message: "Encounter updated",
-      encounter: updatedEncounter
+      encounter: processed
     });
 
   } catch (err) {
@@ -122,11 +117,9 @@ export const updateEncounterStage = (req, res) => {
 ================================================
 ADD CLINICAL NOTES
 ================================================
-POST /encounters/:id/notes
-================================================
 */
 
-export const addNotes = (req, res) => {
+export const addNotes = async (req, res) => {
   try {
     const { id } = req.params;
     const { note } = req.body;
@@ -148,11 +141,13 @@ export const addNotes = (req, res) => {
 
     encounter.notesHistory.push(newNote);
 
-    saveEncounter(encounter);
+    const processed = await processCaseState(encounter);
+
+    saveEncounter(processed);
 
     return res.json({
       message: "Notes added",
-      encounter
+      encounter: processed
     });
 
   } catch (err) {
@@ -167,14 +162,11 @@ export const addNotes = (req, res) => {
 
 /*
 ================================================
-ATTACH LAB RESULT SUMMARY TO ENCOUNTER
-(Bridges Labs → Clinical Flow)
-================================================
-PATCH /encounters/:id/labs/summary
+ATTACH LAB SUMMARY
 ================================================
 */
 
-export const attachLabSummary = (req, res) => {
+export const attachLabSummary = async (req, res) => {
   try {
     const { id } = req.params;
     const { summary } = req.body;
@@ -195,11 +187,13 @@ export const attachLabSummary = (req, res) => {
     encounter.labs.summary = summary;
     encounter.updatedAt = new Date().toISOString();
 
-    saveEncounter(encounter);
+    const processed = await processCaseState(encounter);
+
+    saveEncounter(processed);
 
     return res.json({
       message: "Lab summary attached",
-      encounter
+      encounter: processed
     });
 
   } catch (err) {
