@@ -32,10 +32,10 @@ CORE SYSTEM
 // Patient registry
 app.use("/patients", patientRoutes);
 
-// Main clinical workflow (intake → nurse → decision)
+// Main clinical workflow
 app.use("/encounters", encounterRoutes);
 
-// Doctor authority layer
+// Doctor system
 app.use("/doctor", doctorRoutes);
 
 // Lab system
