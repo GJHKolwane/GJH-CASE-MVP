@@ -1,80 +1,107 @@
-/*
-================================================
-CLINICAL STATE MACHINE (ENFORCED + INTELLIGENCE)
-================================================
-*/
-
 import axios from "axios";
-import { updateCaseStatus } from "@gjh/shared/governance/caseState";
 
 /*
 ================================================
-STATE TRANSITIONS (UPDATED STRICT FLOW)
+GJHEALTH STATE MACHINE (STRICT CLINICAL FLOW)
 ================================================
 */
 
 const transitions = {
-  created: ["vitals_recorded"],
+  created: ["intake_completed"],
+
+  intake_completed: ["vitals_recorded"],
 
   vitals_recorded: ["symptoms_recorded"],
 
-  symptoms_recorded: ["ai_triage_completed"],
+  symptoms_recorded: ["nurse_assessment_completed"],
 
-  ai_triage_completed: ["doctor_consultation"],
+  nurse_assessment_completed: ["ai_triage_completed"],
 
-  doctor_consultation: ["treatment_decision"],
+  ai_triage_completed: ["soan_generated"],
 
-  treatment_decision: ["lab_ordered", "completed"],
+  soan_generated: [
+    "prescription_issued",
+    "decision_pending",
+    "doctor_escalation"
+  ],
+
+  decision_pending: [
+    "treatment_applied",
+    "doctor_escalation"
+  ],
+
+  treatment_applied: ["followup_scheduled"],
+
+  followup_scheduled: ["completed"],
+
+  doctor_escalation: ["doctor_consultation"],
+
+  doctor_consultation: ["doctor_notes_added"],
+
+  doctor_notes_added: ["doctor_decision"],
+
+  doctor_decision: [
+    "prescription_issued",
+    "lab_ordered"
+  ],
 
   lab_ordered: ["lab_result_received"],
 
-  lab_result_received: ["doctor_consultation", "completed"],
+  lab_result_received: ["doctor_reassessment"],
+
+  doctor_reassessment: ["final_notes_completed"],
+
+  final_notes_completed: ["completed"],
+
+  prescription_issued: ["completed"],
 
   completed: []
 };
 
 /*
 ================================================
-ACTION MAP (NEW)
+ACTION MAP
 ================================================
 */
 
 export const actionMap = {
+  intake: "intake_completed",
   vitals: "vitals_recorded",
   symptoms: "symptoms_recorded",
+  nurse: "nurse_assessment_completed",
   triage: "ai_triage_completed",
-  notes: "doctor_consultation",
-  treatment: "treatment_decision",
+  soan: "soan_generated",
+  decision: "decision_pending",
+  treat: "treatment_applied",
+  followup: "followup_scheduled",
+  escalate: "doctor_escalation",
+  doctor_notes: "doctor_notes_added",
+  doctor_decision: "doctor_decision",
+  prescription: "prescription_issued",
   lab_order: "lab_ordered",
-  lab_result: "lab_result_received"
+  lab_result: "lab_result_received",
+  reassess: "doctor_reassessment",
+  final: "final_notes_completed"
 };
 
 /*
 ================================================
-VALIDATE TRANSITION
+VALIDATION
 ================================================
 */
 
-export function canTransition(currentState, nextState) {
-  const allowed = transitions[currentState] || [];
-  return allowed.includes(nextState);
+export function canTransition(current, next) {
+  return transitions[current]?.includes(next);
 }
 
-/*
-================================================
-ENFORCEMENT FUNCTION (CRITICAL)
-================================================
-*/
-
-export function enforceTransition(currentState, nextState) {
-  const allowed = canTransition(currentState, nextState);
+export function enforceTransition(current, next) {
+  const allowed = canTransition(current, next);
 
   if (!allowed) {
-    console.error(`❌ INVALID TRANSITION: ${currentState} → ${nextState}`);
-
+    console.error(`❌ INVALID: ${current} → ${next}`);
     return {
       allowed: false,
-      error: `Invalid transition: ${currentState} → ${nextState}`
+      error: `Invalid transition: ${current} → ${next}`
     };
   }
 
@@ -83,192 +110,72 @@ export function enforceTransition(currentState, nextState) {
 
 /*
 ================================================
-AUTO TRIAGE CHECK
+AI TRIAGE (AUTO)
 ================================================
 */
 
-function shouldTriggerTriage(patientCase) {
-  return (
-    patientCase?.vitals &&
-    patientCase?.symptoms &&
-    !patientCase?.triage
-  );
-}
-
-/*
-================================================
-TRIGGER AI TRIAGE (FIXED PORT)
-================================================
-*/
-
-async function triggerTriage(patientCase) {
+async function triggerTriage(caseData) {
   try {
-    const response = await axios.post(
+    const res = await axios.post(
       "http://localhost:8087/triage/nurse",
-      { case: patientCase }
+      { case: caseData }
     );
-
-    return response.data;
-
-  } catch (error) {
-
-    console.error("AI TRIAGE ERROR:", error.message);
-
-    return {
-      assessment: "AI unavailable",
-      severity: "MEDIUM",
-      confidence: 0.5,
-      recommendations: ["Manual review required"],
-    };
+    return res.data;
+  } catch {
+    return { severity: "MEDIUM", note: "fallback" };
   }
 }
 
 /*
 ================================================
-ESCALATION TRIGGER (SAFE)
+MAIN ENGINE
 ================================================
 */
 
-async function triggerEscalation(patientCase) {
-  try {
-    await axios.post(
-      "http://localhost:8081/escalate",
-      { case: patientCase }
-    );
-  } catch (error) {
-    console.warn("⚠️ Escalation fallback activated", error.message);
-  }
-}
+export async function processCaseState(encounter) {
 
-/*
-================================================
-SIGNATURE VALIDATION
-================================================
-*/
+  let updated = { ...encounter };
 
-function hasDoctorSignature(order) {
-  return order?.requestedBy?.doctorId;
-}
-
-function hasLabTechSignature(result) {
-  return result?.recordedBy?.labTechId;
-}
-
-/*
-================================================
-LAB IMPACT ANALYSIS
-================================================
-*/
-
-function analyzeLabImpact(patientCase) {
-  const results = patientCase?.labs?.results || [];
-
-  if (!results.length) return null;
-
-  const validResults = results.filter(hasLabTechSignature);
-
-  if (!validResults.length) {
-    console.warn("⚠️ Lab results missing signature");
-    return null;
-  }
-
-  const abnormal = validResults.find(
-    r => r.interpretation === "high" || r.interpretation === "low"
-  );
-
-  if (abnormal) {
-    return {
-      requiresDoctor: true,
-      severity: "HIGH",
-      reason: "Abnormal lab result detected"
-    };
-  }
-
-  return { requiresDoctor: false };
-}
-
-/*
-================================================
-MAIN STATE ENGINE (NOW ENFORCED)
-================================================
-*/
-
-export async function processCaseState(patientCase) {
-
-  let updatedCase = { ...patientCase };
-
-  /*
-  --------------------------------------------
-  🔒 STATE ENFORCEMENT CORE
-  --------------------------------------------
-  */
-
-  if (!updatedCase.status) {
-    updatedCase.status = "created";
+  if (!updated.status) {
+    updated.status = "created";
   }
 
   /*
-  --------------------------------------------
   AUTO TRIAGE
-  --------------------------------------------
   */
 
-  if (shouldTriggerTriage(updatedCase)) {
-
+  if (
+    updated.vitals &&
+    updated.symptoms &&
+    !updated.triage
+  ) {
     const check = enforceTransition(
-      updatedCase.status,
+      updated.status,
       actionMap.triage
     );
 
     if (check.allowed) {
-      console.log("⚡ Auto-triggering AI triage...");
+      const triage = await triggerTriage(updated);
 
-      const triage = await triggerTriage(updatedCase);
-
-      updatedCase.triage = triage;
-      updatedCase.status = actionMap.triage;
+      updated.triage = triage;
+      updated.status = actionMap.triage;
     }
   }
 
   /*
-  --------------------------------------------
-  LAB IMPACT
-  --------------------------------------------
+  AUTO SOAN (SIMPLIFIED)
   */
 
-  const labImpact = analyzeLabImpact(updatedCase);
+  if (updated.triage && updated.status === "ai_triage_completed") {
+    updated.soan = {
+      subjective: updated.symptoms,
+      objective: updated.vitals,
+      assessment: updated.triage,
+      plan: "Pending decision"
+    };
 
-  if (labImpact?.requiresDoctor) {
-
-    const check = enforceTransition(
-      updatedCase.status,
-      "doctor_consultation"
-    );
-
-    if (check.allowed) {
-      console.log("🧪 Lab-triggered escalation");
-
-      updatedCase.status = "doctor_consultation";
-
-      await triggerEscalation(updatedCase);
-    }
+    updated.status = actionMap.soan;
   }
 
-  /*
-  --------------------------------------------
-  TRIAGE ESCALATION
-  --------------------------------------------
-  */
-
-  if (
-    updatedCase?.triage?.severity === "HIGH" ||
-    updatedCase?.triage?.severity === "CRITICAL"
-  ) {
-
-    console.log("🚨 Escalation triggered from triage!");
-
-    await triggerEscalation(updatedCase);
-  }
-
-  return updatedCase;
+  return updated;
 }
