@@ -1,7 +1,12 @@
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
-import { processCaseState } from "../services/clinicalStateMachine.js";
+
+import {
+  processCaseState,
+  enforceTransition,
+  actionMap
+} from "../services/clinicalStateMachine.js";
 
 const dataDir = path.resolve("data");
 const encountersFile = path.join(dataDir, "encounters.json");
@@ -17,7 +22,7 @@ const writeJSON = (file, data) => {
 
 /*
 ================================================
-CREATE ENCOUNTER (FHIR + LEGACY SAFE)
+CREATE ENCOUNTER
 ================================================
 */
 
@@ -25,7 +30,6 @@ export const createEncounterHandler = (req, res) => {
   try {
     const { patientId, subject } = req.body;
 
-    // 🔥 Normalize input
     const finalSubject = subject || (
       patientId ? { reference: `Patient/${patientId}` } : null
     );
@@ -42,7 +46,7 @@ export const createEncounterHandler = (req, res) => {
       id: crypto.randomUUID(),
       resourceType: "Encounter",
       subject: finalSubject,
-      status: "in-progress",
+      status: "created", // 🔥 IMPORTANT FIX
       createdAt: new Date().toISOString(),
       timeline: []
     };
@@ -60,49 +64,6 @@ export const createEncounterHandler = (req, res) => {
 
     return res.status(500).json({
       error: "Failed to create encounter"
-    });
-  }
-};
-
-/*
-================================================
-SET ENCOUNTER STAGE
-================================================
-*/
-
-export const setEncounterStageHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const updates = req.body;
-
-    const encounters = readJSON(encountersFile);
-    const index = encounters.findIndex(e => e.id === id);
-
-    if (index === -1) {
-      return res.status(404).json({ error: "Encounter not found" });
-    }
-
-    let encounter = {
-      ...encounters[index],
-      ...updates,
-      updatedAt: new Date().toISOString()
-    };
-
-    encounter = await processCaseState(encounter);
-
-    encounters[index] = encounter;
-    writeJSON(encountersFile, encounters);
-
-    return res.json({
-      message: "Encounter updated",
-      encounter
-    });
-
-  } catch (err) {
-    console.error("STAGE UPDATE ERROR:", err);
-
-    return res.status(500).json({
-      error: "Failed to update encounter stage"
     });
   }
 };
@@ -127,9 +88,16 @@ export const addVitalsHandler = async (req, res) => {
 
     let encounter = encounters[index];
 
-    encounter.vitals = vitals;
+    const nextState = actionMap.vitals;
+    const check = enforceTransition(encounter.status, nextState);
 
-    encounter.timeline = encounter.timeline || [];
+    if (!check.allowed) {
+      return res.status(400).json({ error: check.error });
+    }
+
+    encounter.vitals = vitals;
+    encounter.status = nextState;
+
     encounter.timeline.push({
       event: "Vitals recorded",
       data: vitals,
@@ -141,17 +109,11 @@ export const addVitalsHandler = async (req, res) => {
     encounters[index] = encounter;
     writeJSON(encountersFile, encounters);
 
-    return res.json({
-      message: "Vitals added",
-      encounter
-    });
+    return res.json({ message: "Vitals added", encounter });
 
   } catch (err) {
     console.error("VITALS ERROR:", err);
-
-    return res.status(500).json({
-      error: "Failed to add vitals"
-    });
+    return res.status(500).json({ error: "Failed to add vitals" });
   }
 };
 
@@ -175,9 +137,16 @@ export const addSymptomsHandler = async (req, res) => {
 
     let encounter = encounters[index];
 
-    encounter.symptoms = symptoms;
+    const nextState = actionMap.symptoms;
+    const check = enforceTransition(encounter.status, nextState);
 
-    encounter.timeline = encounter.timeline || [];
+    if (!check.allowed) {
+      return res.status(400).json({ error: check.error });
+    }
+
+    encounter.symptoms = symptoms;
+    encounter.status = nextState;
+
     encounter.timeline.push({
       event: "Symptoms recorded",
       data: symptoms,
@@ -189,63 +158,11 @@ export const addSymptomsHandler = async (req, res) => {
     encounters[index] = encounter;
     writeJSON(encountersFile, encounters);
 
-    return res.json({
-      message: "Symptoms added",
-      encounter
-    });
+    return res.json({ message: "Symptoms added", encounter });
 
   } catch (err) {
     console.error("SYMPTOMS ERROR:", err);
-
-    return res.status(500).json({
-      error: "Failed to add symptoms"
-    });
-  }
-};
-
-/*
-================================================
-ADD NOTES
-================================================
-*/
-
-export const addNotesHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { note } = req.body;
-
-    const encounters = readJSON(encountersFile);
-    const index = encounters.findIndex(e => e.id === id);
-
-    if (index === -1) {
-      return res.status(404).json({ error: "Encounter not found" });
-    }
-
-    let encounter = encounters[index];
-
-    encounter.notesHistory = encounter.notesHistory || [];
-
-    encounter.notesHistory.push({
-      note,
-      createdAt: new Date().toISOString()
-    });
-
-    encounter = await processCaseState(encounter);
-
-    encounters[index] = encounter;
-    writeJSON(encountersFile, encounters);
-
-    return res.json({
-      message: "Notes added",
-      encounter
-    });
-
-  } catch (err) {
-    console.error("NOTES ERROR:", err);
-
-    return res.status(500).json({
-      error: "Failed to add notes"
-    });
+    return res.status(500).json({ error: "Failed to add symptoms" });
   }
 };
 
@@ -269,11 +186,18 @@ export const addTriageHandler = async (req, res) => {
 
     let encounter = encounters[index];
 
-    encounter.triage = triage;
+    const nextState = actionMap.triage;
+    const check = enforceTransition(encounter.status, nextState);
 
-    encounter.timeline = encounter.timeline || [];
+    if (!check.allowed) {
+      return res.status(400).json({ error: check.error });
+    }
+
+    encounter.triage = triage;
+    encounter.status = nextState;
+
     encounter.timeline.push({
-      event: "Triage added",
+      event: "Triage completed",
       data: triage,
       timestamp: new Date().toISOString()
     });
@@ -283,17 +207,60 @@ export const addTriageHandler = async (req, res) => {
     encounters[index] = encounter;
     writeJSON(encountersFile, encounters);
 
-    return res.json({
-      message: "Triage added",
-      encounter
-    });
+    return res.json({ message: "Triage added", encounter });
 
   } catch (err) {
     console.error("TRIAGE ERROR:", err);
+    return res.status(500).json({ error: "Failed to add triage" });
+  }
+};
 
-    return res.status(500).json({
-      error: "Failed to add triage"
+/*
+================================================
+ADD NOTES (DOCTOR)
+================================================
+*/
+
+export const addNotesHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { note } = req.body;
+
+    const encounters = readJSON(encountersFile);
+    const index = encounters.findIndex(e => e.id === id);
+
+    if (index === -1) {
+      return res.status(404).json({ error: "Encounter not found" });
+    }
+
+    let encounter = encounters[index];
+
+    const nextState = actionMap.notes;
+    const check = enforceTransition(encounter.status, nextState);
+
+    if (!check.allowed) {
+      return res.status(400).json({ error: check.error });
+    }
+
+    encounter.notesHistory = encounter.notesHistory || [];
+
+    encounter.notesHistory.push({
+      note,
+      createdAt: new Date().toISOString()
     });
+
+    encounter.status = nextState;
+
+    encounter = await processCaseState(encounter);
+
+    encounters[index] = encounter;
+    writeJSON(encountersFile, encounters);
+
+    return res.json({ message: "Notes added", encounter });
+
+  } catch (err) {
+    console.error("NOTES ERROR:", err);
+    return res.status(500).json({ error: "Failed to add notes" });
   }
 };
 
@@ -317,9 +284,16 @@ export const addTreatmentDecisionHandler = async (req, res) => {
 
     let encounter = encounters[index];
 
-    encounter.treatmentDecision = decision;
+    const nextState = actionMap.treatment;
+    const check = enforceTransition(encounter.status, nextState);
 
-    encounter.timeline = encounter.timeline || [];
+    if (!check.allowed) {
+      return res.status(400).json({ error: check.error });
+    }
+
+    encounter.treatmentDecision = decision;
+    encounter.status = nextState;
+
     encounter.timeline.push({
       event: "Treatment decision recorded",
       data: decision,
@@ -331,17 +305,11 @@ export const addTreatmentDecisionHandler = async (req, res) => {
     encounters[index] = encounter;
     writeJSON(encountersFile, encounters);
 
-    return res.json({
-      message: "Treatment decision recorded",
-      encounter
-    });
+    return res.json({ message: "Treatment recorded", encounter });
 
   } catch (err) {
     console.error("TREATMENT ERROR:", err);
-
-    return res.status(500).json({
-      error: "Failed to record treatment decision"
-    });
+    return res.status(500).json({ error: "Failed to record treatment" });
   }
 };
 
@@ -368,7 +336,6 @@ export const getEncounterTimelineHandler = (req, res) => {
 
   } catch (err) {
     console.error("TIMELINE ERROR:", err);
-
     return res.status(500).json({
       error: "Failed to fetch timeline"
     });
