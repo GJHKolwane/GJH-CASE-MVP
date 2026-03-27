@@ -19,13 +19,13 @@ ENCOUNTERS
 =====================================
 */
 
-// 🔥 ENFORCE patientId BEFORE hitting controller
+// 🔥 UPDATED: Supports BOTH legacy + FHIR input
 router.post("/", (req, res, next) => {
-  const { patientId } = req.body;
+  const { patientId, subject } = req.body;
 
-  if (!patientId) {
+  if (!patientId && !subject?.reference) {
     return res.status(400).json({
-      error: "patientId is required — resolve patient first"
+      error: "Either patientId or subject.reference is required — resolve patient first"
     });
   }
 
