@@ -2,7 +2,12 @@ import express from "express";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
-import { processCaseState } from "../services/clinicalStateMachine.js";
+
+import {
+  processCaseState,
+  enforceTransition,
+  actionMap
+} from "../services/clinicalStateMachine.js";
 
 const router = express.Router();
 
@@ -20,7 +25,7 @@ const writeJSON = (file, data) => {
 
 /*
 ================================================
-CREATE LAB ORDER (FHIR: ServiceRequest)
+LAB ORDER
 ================================================
 */
 
@@ -33,7 +38,7 @@ router.post("/:id/labs/service-request", async (req, res) => {
 
     if (!doctorId) {
       return res.status(400).json({
-        error: "doctorId is required to create lab order"
+        error: "doctorId is required"
       });
     }
 
@@ -44,67 +49,53 @@ router.post("/:id/labs/service-request", async (req, res) => {
       return res.status(404).json({ error: "Encounter not found" });
     }
 
-    encounter.labs = encounter.labs || {
-      orders: [],
-      results: []
-    };
+    const nextState = actionMap.lab_order;
+    const check = enforceTransition(encounter.status, nextState);
+
+    if (!check.allowed) {
+      return res.status(400).json({ error: check.error });
+    }
+
+    encounter.labs = encounter.labs || { orders: [], results: [] };
 
     const timestamp = new Date().toISOString();
 
     const newOrder = {
       id: crypto.randomUUID(),
       resourceType: "ServiceRequest",
-      status: labOrder.status || "active",
-      intent: labOrder.intent || "order",
       code: labOrder.code || { text: "Unknown Test" },
-      priority: labOrder.priority || "routine",
       subject: encounter.subject,
       createdAt: timestamp,
-      requestedBy: {
-        doctorId,
-        timestamp
-      }
+      requestedBy: { doctorId, timestamp }
     };
 
     encounter.labs.orders.push(newOrder);
+    encounter.status = nextState;
 
-    encounter.timeline = encounter.timeline || [];
     encounter.timeline.push({
       event: "Lab order created",
-      data: {
-        orderId: newOrder.id,
-        test: newOrder.code?.text,
-        doctorId
-      },
+      data: newOrder,
       timestamp
     });
 
-    // 🔥 INTELLIGENCE LOOP
-    const updatedEncounter = await processCaseState(encounter);
+    const updated = await processCaseState(encounter);
 
     const index = encounters.findIndex(e => e.id === encounterId);
-    encounters[index] = updatedEncounter;
+    encounters[index] = updated;
 
     writeJSON(encountersFile, encounters);
 
-    return res.json({
-      message: "Lab order created with doctor signature",
-      order: newOrder,
-      encounterId
-    });
+    return res.json({ message: "Lab ordered", order: newOrder });
 
   } catch (err) {
     console.error("LAB ORDER ERROR:", err);
-
-    return res.status(500).json({
-      error: "Failed to create lab order"
-    });
+    return res.status(500).json({ error: "Failed to order lab" });
   }
 });
 
 /*
 ================================================
-STORE LAB RESULT (FHIR: Observation)
+LAB RESULT
 ================================================
 */
 
@@ -117,7 +108,7 @@ router.post("/:id/labs/observation", async (req, res) => {
 
     if (!labTechId) {
       return res.status(400).json({
-        error: "labTechId is required to record lab result"
+        error: "labTechId is required"
       });
     }
 
@@ -128,82 +119,46 @@ router.post("/:id/labs/observation", async (req, res) => {
       return res.status(404).json({ error: "Encounter not found" });
     }
 
-    encounter.labs = encounter.labs || {
-      orders: [],
-      results: []
-    };
+    const nextState = actionMap.lab_result;
+    const check = enforceTransition(encounter.status, nextState);
+
+    if (!check.allowed) {
+      return res.status(400).json({ error: check.error });
+    }
+
+    encounter.labs = encounter.labs || { orders: [], results: [] };
 
     const timestamp = new Date().toISOString();
-
-    let flag = "normal";
-
-    if (labResult?.valueQuantity?.value !== undefined) {
-      const value = labResult.valueQuantity.value;
-
-      if (value > 11000) flag = "high";
-      else if (value < 4000) flag = "low";
-    }
 
     const newResult = {
       id: crypto.randomUUID(),
       resourceType: "Observation",
-      status: labResult.status || "final",
-      code: labResult.code || { text: "Unknown Observation" },
-      valueQuantity: labResult.valueQuantity,
-      referenceRange: labResult.referenceRange || [],
-      interpretation: flag,
-      createdAt: timestamp,
-      recordedBy: {
-        labTechId,
-        timestamp
-      }
+      ...labResult,
+      recordedBy: { labTechId, timestamp },
+      createdAt: timestamp
     };
 
     encounter.labs.results.push(newResult);
+    encounter.status = nextState;
 
-    encounter.timeline = encounter.timeline || [];
     encounter.timeline.push({
       event: "Lab result recorded",
-      data: {
-        resultId: newResult.id,
-        test: newResult.code?.text,
-        interpretation: flag,
-        labTechId
-      },
+      data: newResult,
       timestamp
     });
 
-    if (flag !== "normal") {
-      encounter.flags = encounter.flags || [];
-      encounter.flags.push({
-        type: "abnormal_lab",
-        severity: flag,
-        source: newResult.code?.text,
-        timestamp
-      });
-    }
-
-    // 🔥 INTELLIGENCE LOOP (CRITICAL)
-    const updatedEncounter = await processCaseState(encounter);
+    const updated = await processCaseState(encounter);
 
     const index = encounters.findIndex(e => e.id === encounterId);
-    encounters[index] = updatedEncounter;
+    encounters[index] = updated;
 
     writeJSON(encountersFile, encounters);
 
-    return res.json({
-      message: "Lab result stored with lab technician signature",
-      result: newResult,
-      encounterId,
-      interpretation: flag
-    });
+    return res.json({ message: "Lab result recorded", result: newResult });
 
   } catch (err) {
     console.error("LAB RESULT ERROR:", err);
-
-    return res.status(500).json({
-      error: "Failed to store lab result"
-    });
+    return res.status(500).json({ error: "Failed to store lab result" });
   }
 });
 
