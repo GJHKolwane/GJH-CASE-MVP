@@ -194,3 +194,33 @@ export const decisionHandler = async (req, res) => {
   write(encounters);
   res.json(updated);
 };
+
+/*
+================================================
+GET TIMELINE
+================================================
+*/
+
+export const getEncounterTimelineHandler = (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const encounters = readJSON(encountersFile);
+    const encounter = encounters.find(e => e.id === id);
+
+    if (!encounter) {
+      return res.status(404).json({ error: "Encounter not found" });
+    }
+
+    return res.json({
+      timeline: encounter.timeline || []
+    });
+
+  } catch (err) {
+    console.error("TIMELINE ERROR:", err);
+
+    return res.status(500).json({
+      error: "Failed to fetch timeline"
+    });
+  }
+};
