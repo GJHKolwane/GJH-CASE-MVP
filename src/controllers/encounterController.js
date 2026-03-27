@@ -1,10 +1,19 @@
-import {
-  getEncounter,
-  saveEncounter,
-  createEncounter as createEncounterService
-} from "../services/encounterService.js";
-
+import fs from "fs";
+import path from "path";
+import crypto from "crypto";
 import { processCaseState } from "../services/clinicalStateMachine.js";
+
+const dataDir = path.resolve("data");
+const encountersFile = path.join(dataDir, "encounters.json");
+
+const readJSON = (file) => {
+  if (!fs.existsSync(file)) return [];
+  return JSON.parse(fs.readFileSync(file, "utf-8"));
+};
+
+const writeJSON = (file, data) => {
+  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+};
 
 /*
 ================================================
@@ -22,19 +31,29 @@ export const createEncounter = (req, res) => {
       });
     }
 
-    const encounter = createEncounterService(patientId);
+    const encounters = readJSON(encountersFile);
+
+    const newEncounter = {
+      id: crypto.randomUUID(),
+      patientId,
+      status: "created",
+      createdAt: new Date().toISOString(),
+      timeline: []
+    };
+
+    encounters.push(newEncounter);
+    writeJSON(encountersFile, encounters);
 
     return res.status(201).json({
       message: "Encounter created successfully",
-      encounter
+      encounter: newEncounter
     });
 
   } catch (err) {
     console.error("CREATE ENCOUNTER ERROR:", err.message);
 
     return res.status(500).json({
-      error: "Failed to create encounter",
-      details: err.message
+      error: "Failed to create encounter"
     });
   }
 };
@@ -49,7 +68,8 @@ export const fetchEncounter = (req, res) => {
   try {
     const { id } = req.params;
 
-    const encounter = getEncounter(id);
+    const encounters = readJSON(encountersFile);
+    const encounter = encounters.find(e => e.id === id);
 
     if (!encounter) {
       return res.status(404).json({
@@ -63,8 +83,7 @@ export const fetchEncounter = (req, res) => {
     console.error("FETCH ENCOUNTER ERROR:", err.message);
 
     return res.status(500).json({
-      error: "Failed to fetch encounter",
-      details: err.message
+      error: "Failed to fetch encounter"
     });
   }
 };
@@ -80,35 +99,37 @@ export const updateEncounterStage = async (req, res) => {
     const { id } = req.params;
     const updates = req.body;
 
-    const encounter = getEncounter(id);
+    const encounters = readJSON(encountersFile);
+    const index = encounters.findIndex(e => e.id === id);
 
-    if (!encounter) {
+    if (index === -1) {
       return res.status(404).json({
         error: "Encounter not found"
       });
     }
 
-    const updatedEncounter = {
-      ...encounter,
+    let encounter = {
+      ...encounters[index],
       ...updates,
       updatedAt: new Date().toISOString()
     };
 
-    const processed = await processCaseState(updatedEncounter);
+    // 🔥 INTELLIGENCE LOOP
+    encounter = await processCaseState(encounter);
 
-    saveEncounter(processed);
+    encounters[index] = encounter;
+    writeJSON(encountersFile, encounters);
 
     return res.json({
       message: "Encounter updated",
-      encounter: processed
+      encounter
     });
 
   } catch (err) {
     console.error("UPDATE ENCOUNTER ERROR:", err.message);
 
     return res.status(500).json({
-      error: "Failed to update encounter",
-      details: err.message
+      error: "Failed to update encounter"
     });
   }
 };
@@ -124,38 +145,40 @@ export const addNotes = async (req, res) => {
     const { id } = req.params;
     const { note } = req.body;
 
-    const encounter = getEncounter(id);
+    const encounters = readJSON(encountersFile);
+    const index = encounters.findIndex(e => e.id === id);
 
-    if (!encounter) {
+    if (index === -1) {
       return res.status(404).json({
         error: "Encounter not found"
       });
     }
 
+    let encounter = encounters[index];
+
     encounter.notesHistory = encounter.notesHistory || [];
 
-    const newNote = {
+    encounter.notesHistory.push({
       note,
       createdAt: new Date().toISOString()
-    };
+    });
 
-    encounter.notesHistory.push(newNote);
+    // 🔥 INTELLIGENCE LOOP
+    encounter = await processCaseState(encounter);
 
-    const processed = await processCaseState(encounter);
-
-    saveEncounter(processed);
+    encounters[index] = encounter;
+    writeJSON(encountersFile, encounters);
 
     return res.json({
       message: "Notes added",
-      encounter: processed
+      encounter
     });
 
   } catch (err) {
     console.error("ADD NOTES ERROR:", err.message);
 
     return res.status(500).json({
-      error: "Failed to add notes",
-      details: err.message
+      error: "Failed to add notes"
     });
   }
 };
@@ -171,13 +194,16 @@ export const attachLabSummary = async (req, res) => {
     const { id } = req.params;
     const { summary } = req.body;
 
-    const encounter = getEncounter(id);
+    const encounters = readJSON(encountersFile);
+    const index = encounters.findIndex(e => e.id === id);
 
-    if (!encounter) {
+    if (index === -1) {
       return res.status(404).json({
         error: "Encounter not found"
       });
     }
+
+    let encounter = encounters[index];
 
     encounter.labs = encounter.labs || {
       orders: [],
@@ -187,21 +213,22 @@ export const attachLabSummary = async (req, res) => {
     encounter.labs.summary = summary;
     encounter.updatedAt = new Date().toISOString();
 
-    const processed = await processCaseState(encounter);
+    // 🔥 INTELLIGENCE LOOP
+    encounter = await processCaseState(encounter);
 
-    saveEncounter(processed);
+    encounters[index] = encounter;
+    writeJSON(encountersFile, encounters);
 
     return res.json({
       message: "Lab summary attached",
-      encounter: processed
+      encounter
     });
 
   } catch (err) {
     console.error("LAB SUMMARY ERROR:", err.message);
 
     return res.status(500).json({
-      error: "Failed to attach lab summary",
-      details: err.message
+      error: "Failed to attach lab summary"
     });
   }
 };
