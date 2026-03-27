@@ -100,3 +100,5 @@ export const recordLabResultHandler = async (req, res) => {
   write(encounters);
   res.json(updated);
 };
+
+export default router;
