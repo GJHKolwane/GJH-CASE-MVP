@@ -21,15 +21,9 @@ CREATE ENCOUNTER
 ================================================
 */
 
-export const createEncounter = (req, res) => {
+export const createEncounterHandler = (req, res) => {
   try {
     const { patientId } = req.body;
-
-    if (!patientId) {
-      return res.status(400).json({
-        error: "patientId is required"
-      });
-    }
 
     const encounters = readJSON(encountersFile);
 
@@ -60,41 +54,11 @@ export const createEncounter = (req, res) => {
 
 /*
 ================================================
-GET ENCOUNTER
+SET ENCOUNTER STAGE
 ================================================
 */
 
-export const fetchEncounter = (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const encounters = readJSON(encountersFile);
-    const encounter = encounters.find(e => e.id === id);
-
-    if (!encounter) {
-      return res.status(404).json({
-        error: "Encounter not found"
-      });
-    }
-
-    return res.json({ encounter });
-
-  } catch (err) {
-    console.error("FETCH ENCOUNTER ERROR:", err.message);
-
-    return res.status(500).json({
-      error: "Failed to fetch encounter"
-    });
-  }
-};
-
-/*
-================================================
-UPDATE ENCOUNTER STAGE
-================================================
-*/
-
-export const updateEncounterStage = async (req, res) => {
+export const setEncounterStageHandler = async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
@@ -103,9 +67,7 @@ export const updateEncounterStage = async (req, res) => {
     const index = encounters.findIndex(e => e.id === id);
 
     if (index === -1) {
-      return res.status(404).json({
-        error: "Encounter not found"
-      });
+      return res.status(404).json({ error: "Encounter not found" });
     }
 
     let encounter = {
@@ -114,7 +76,6 @@ export const updateEncounterStage = async (req, res) => {
       updatedAt: new Date().toISOString()
     };
 
-    // 🔥 INTELLIGENCE LOOP
     encounter = await processCaseState(encounter);
 
     encounters[index] = encounter;
@@ -126,21 +87,117 @@ export const updateEncounterStage = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("UPDATE ENCOUNTER ERROR:", err.message);
+    console.error("STAGE UPDATE ERROR:", err.message);
 
     return res.status(500).json({
-      error: "Failed to update encounter"
+      error: "Failed to update encounter stage"
     });
   }
 };
 
 /*
 ================================================
-ADD CLINICAL NOTES
+ADD VITALS
 ================================================
 */
 
-export const addNotes = async (req, res) => {
+export const addVitalsHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const vitals = req.body;
+
+    const encounters = readJSON(encountersFile);
+    const index = encounters.findIndex(e => e.id === id);
+
+    if (index === -1) {
+      return res.status(404).json({ error: "Encounter not found" });
+    }
+
+    let encounter = encounters[index];
+
+    encounter.vitals = vitals;
+
+    encounter.timeline = encounter.timeline || [];
+    encounter.timeline.push({
+      event: "Vitals recorded",
+      data: vitals,
+      timestamp: new Date().toISOString()
+    });
+
+    encounter = await processCaseState(encounter);
+
+    encounters[index] = encounter;
+    writeJSON(encountersFile, encounters);
+
+    return res.json({
+      message: "Vitals added",
+      encounter
+    });
+
+  } catch (err) {
+    console.error("VITALS ERROR:", err.message);
+
+    return res.status(500).json({
+      error: "Failed to add vitals"
+    });
+  }
+};
+
+/*
+================================================
+ADD SYMPTOMS
+================================================
+*/
+
+export const addSymptomsHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const symptoms = req.body;
+
+    const encounters = readJSON(encountersFile);
+    const index = encounters.findIndex(e => e.id === id);
+
+    if (index === -1) {
+      return res.status(404).json({ error: "Encounter not found" });
+    }
+
+    let encounter = encounters[index];
+
+    encounter.symptoms = symptoms;
+
+    encounter.timeline = encounter.timeline || [];
+    encounter.timeline.push({
+      event: "Symptoms recorded",
+      data: symptoms,
+      timestamp: new Date().toISOString()
+    });
+
+    encounter = await processCaseState(encounter);
+
+    encounters[index] = encounter;
+    writeJSON(encountersFile, encounters);
+
+    return res.json({
+      message: "Symptoms added",
+      encounter
+    });
+
+  } catch (err) {
+    console.error("SYMPTOMS ERROR:", err.message);
+
+    return res.status(500).json({
+      error: "Failed to add symptoms"
+    });
+  }
+};
+
+/*
+================================================
+ADD NOTES
+================================================
+*/
+
+export const addNotesHandler = async (req, res) => {
   try {
     const { id } = req.params;
     const { note } = req.body;
@@ -149,9 +206,7 @@ export const addNotes = async (req, res) => {
     const index = encounters.findIndex(e => e.id === id);
 
     if (index === -1) {
-      return res.status(404).json({
-        error: "Encounter not found"
-      });
+      return res.status(404).json({ error: "Encounter not found" });
     }
 
     let encounter = encounters[index];
@@ -163,7 +218,6 @@ export const addNotes = async (req, res) => {
       createdAt: new Date().toISOString()
     });
 
-    // 🔥 INTELLIGENCE LOOP
     encounter = await processCaseState(encounter);
 
     encounters[index] = encounter;
@@ -175,7 +229,7 @@ export const addNotes = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("ADD NOTES ERROR:", err.message);
+    console.error("NOTES ERROR:", err.message);
 
     return res.status(500).json({
       error: "Failed to add notes"
@@ -185,50 +239,126 @@ export const addNotes = async (req, res) => {
 
 /*
 ================================================
-ATTACH LAB SUMMARY
+ADD TRIAGE (MANUAL / OVERRIDE)
 ================================================
 */
 
-export const attachLabSummary = async (req, res) => {
+export const addTriageHandler = async (req, res) => {
   try {
     const { id } = req.params;
-    const { summary } = req.body;
+    const triage = req.body;
 
     const encounters = readJSON(encountersFile);
     const index = encounters.findIndex(e => e.id === id);
 
     if (index === -1) {
-      return res.status(404).json({
-        error: "Encounter not found"
-      });
+      return res.status(404).json({ error: "Encounter not found" });
     }
 
     let encounter = encounters[index];
 
-    encounter.labs = encounter.labs || {
-      orders: [],
-      results: []
-    };
+    encounter.triage = triage;
 
-    encounter.labs.summary = summary;
-    encounter.updatedAt = new Date().toISOString();
+    encounter.timeline = encounter.timeline || [];
+    encounter.timeline.push({
+      event: "Triage added",
+      data: triage,
+      timestamp: new Date().toISOString()
+    });
 
-    // 🔥 INTELLIGENCE LOOP
     encounter = await processCaseState(encounter);
 
     encounters[index] = encounter;
     writeJSON(encountersFile, encounters);
 
     return res.json({
-      message: "Lab summary attached",
+      message: "Triage added",
       encounter
     });
 
   } catch (err) {
-    console.error("LAB SUMMARY ERROR:", err.message);
+    console.error("TRIAGE ERROR:", err.message);
 
     return res.status(500).json({
-      error: "Failed to attach lab summary"
+      error: "Failed to add triage"
+    });
+  }
+};
+
+/*
+================================================
+TREATMENT DECISION
+================================================
+*/
+
+export const addTreatmentDecisionHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const decision = req.body;
+
+    const encounters = readJSON(encountersFile);
+    const index = encounters.findIndex(e => e.id === id);
+
+    if (index === -1) {
+      return res.status(404).json({ error: "Encounter not found" });
+    }
+
+    let encounter = encounters[index];
+
+    encounter.treatmentDecision = decision;
+
+    encounter.timeline = encounter.timeline || [];
+    encounter.timeline.push({
+      event: "Treatment decision recorded",
+      data: decision,
+      timestamp: new Date().toISOString()
+    });
+
+    encounter = await processCaseState(encounter);
+
+    encounters[index] = encounter;
+    writeJSON(encountersFile, encounters);
+
+    return res.json({
+      message: "Treatment decision recorded",
+      encounter
+    });
+
+  } catch (err) {
+    console.error("TREATMENT ERROR:", err.message);
+
+    return res.status(500).json({
+      error: "Failed to record treatment decision"
+    });
+  }
+};
+
+/*
+================================================
+GET TIMELINE
+================================================
+*/
+
+export const getEncounterTimelineHandler = (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const encounters = readJSON(encountersFile);
+    const encounter = encounters.find(e => e.id === id);
+
+    if (!encounter) {
+      return res.status(404).json({ error: "Encounter not found" });
+    }
+
+    return res.json({
+      timeline: encounter.timeline || []
+    });
+
+  } catch (err) {
+    console.error("TIMELINE ERROR:", err.message);
+
+    return res.status(500).json({
+      error: "Failed to fetch timeline"
     });
   }
 };
