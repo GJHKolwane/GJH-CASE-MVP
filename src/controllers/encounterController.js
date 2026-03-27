@@ -17,20 +17,32 @@ const writeJSON = (file, data) => {
 
 /*
 ================================================
-CREATE ENCOUNTER
+CREATE ENCOUNTER (FHIR + LEGACY SAFE)
 ================================================
 */
 
 export const createEncounterHandler = (req, res) => {
   try {
-    const { patientId } = req.body;
+    const { patientId, subject } = req.body;
+
+    // 🔥 Normalize input
+    const finalSubject = subject || (
+      patientId ? { reference: `Patient/${patientId}` } : null
+    );
+
+    if (!finalSubject?.reference) {
+      return res.status(400).json({
+        error: "Either patientId or subject.reference is required"
+      });
+    }
 
     const encounters = readJSON(encountersFile);
 
     const newEncounter = {
       id: crypto.randomUUID(),
-      patientId,
-      status: "created",
+      resourceType: "Encounter",
+      subject: finalSubject,
+      status: "in-progress",
       createdAt: new Date().toISOString(),
       timeline: []
     };
@@ -44,7 +56,7 @@ export const createEncounterHandler = (req, res) => {
     });
 
   } catch (err) {
-    console.error("CREATE ENCOUNTER ERROR:", err.message);
+    console.error("CREATE ENCOUNTER ERROR:", err);
 
     return res.status(500).json({
       error: "Failed to create encounter"
@@ -87,7 +99,7 @@ export const setEncounterStageHandler = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("STAGE UPDATE ERROR:", err.message);
+    console.error("STAGE UPDATE ERROR:", err);
 
     return res.status(500).json({
       error: "Failed to update encounter stage"
@@ -135,7 +147,7 @@ export const addVitalsHandler = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("VITALS ERROR:", err.message);
+    console.error("VITALS ERROR:", err);
 
     return res.status(500).json({
       error: "Failed to add vitals"
@@ -183,7 +195,7 @@ export const addSymptomsHandler = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("SYMPTOMS ERROR:", err.message);
+    console.error("SYMPTOMS ERROR:", err);
 
     return res.status(500).json({
       error: "Failed to add symptoms"
@@ -229,7 +241,7 @@ export const addNotesHandler = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("NOTES ERROR:", err.message);
+    console.error("NOTES ERROR:", err);
 
     return res.status(500).json({
       error: "Failed to add notes"
@@ -239,7 +251,7 @@ export const addNotesHandler = async (req, res) => {
 
 /*
 ================================================
-ADD TRIAGE (MANUAL / OVERRIDE)
+ADD TRIAGE
 ================================================
 */
 
@@ -277,7 +289,7 @@ export const addTriageHandler = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("TRIAGE ERROR:", err.message);
+    console.error("TRIAGE ERROR:", err);
 
     return res.status(500).json({
       error: "Failed to add triage"
@@ -325,7 +337,7 @@ export const addTreatmentDecisionHandler = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("TREATMENT ERROR:", err.message);
+    console.error("TREATMENT ERROR:", err);
 
     return res.status(500).json({
       error: "Failed to record treatment decision"
@@ -355,7 +367,7 @@ export const getEncounterTimelineHandler = (req, res) => {
     });
 
   } catch (err) {
-    console.error("TIMELINE ERROR:", err.message);
+    console.error("TIMELINE ERROR:", err);
 
     return res.status(500).json({
       error: "Failed to fetch timeline"
