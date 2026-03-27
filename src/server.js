@@ -3,29 +3,14 @@ import cors from "cors";
 
 /*
 =========================================
-ROUTES
+ROUTES (CLEAN GJHEALTH ARCHITECTURE)
 =========================================
 */
 
 import patientRoutes from "./routes/patientRoutes.js";
 import encounterRoutes from "./routes/encounterRoutes.js";
-
-import vitalsRoutes from "./routes/vitalsRoutes.js";
-import symptomsRoutes from "./routes/symptomsRoutes.js";
-import notesRoutes from "./routes/notesRoutes.js";
-
-import triageRoutes from "./routes/triageRoutes.js";
-
-import soanRoutes from "./routes/soanRoutes.js"; // Nurse SOAN
-import labsRoutes from "./routes/labs.routes.js";
-
-import doctorNotesRoutes from "./routes/doctorNotesRoutes.js";
-import doctorSoanRoutes from "./routes/doctorSoanRoutes.js";
-
-import treatmentDecisionRoutes from "./routes/treatmentDecisionRoutes.js";
-
-import prescriptionRoutes from "./routes/prescriptionRoutes.js";
-import doctorReviewRoutes from "./routes/doctorReviewRoutes.js";
+import doctorRoutes from "./routes/doctorRoutes.js";
+import labRoutes from "./routes/labRoutes.js";
 
 /*
 =========================================
@@ -40,59 +25,31 @@ app.use(express.json());
 
 /*
 =========================================
-CORE RESOURCES
+CORE SYSTEM
 =========================================
 */
 
+// Patient registry
 app.use("/patients", patientRoutes);
+
+// Main clinical workflow (intake → nurse → decision)
 app.use("/encounters", encounterRoutes);
 
-/*
-=========================================
-NURSE WORKFLOW
-=========================================
-*/
+// Doctor authority layer
+app.use("/doctor", doctorRoutes);
 
-app.use("/encounters", vitalsRoutes);
-app.use("/encounters", symptomsRoutes);
-app.use("/encounters", notesRoutes);
-
-app.use("/encounters", triageRoutes);
-app.use("/encounters", soanRoutes);
+// Lab system
+app.use("/labs", labRoutes);
 
 /*
 =========================================
-LABS (FIXED MOUNT)
+HEALTH CHECK
 =========================================
 */
 
-app.use("/encounters", labsRoutes);
-
-/*
-=========================================
-DOCTOR WORKFLOW
-=========================================
-*/
-
-app.use("/encounters", doctorNotesRoutes);
-app.use("/encounters", doctorSoanRoutes);
-app.use("/encounters", doctorReviewRoutes);
-
-/*
-=========================================
-TREATMENT DECISION
-=========================================
-*/
-
-app.use("/encounters", treatmentDecisionRoutes);
-
-/*
-=========================================
-FINAL CLINICAL ACTION
-=========================================
-*/
-
-app.use("/encounters", prescriptionRoutes);
+app.get("/", (req, res) => {
+  res.send("GJHealth API Running 🚀");
+});
 
 /*
 =========================================
@@ -103,5 +60,5 @@ SERVER
 const PORT = 5050;
 
 app.listen(PORT, () => {
-  console.log(`GJH Case MCP running on port ${PORT}`);
+  console.log(`🚀 GJHealth running on port ${PORT}`);
 });
