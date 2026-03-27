@@ -2,12 +2,11 @@ import express from "express";
 
 import {
   createEncounterHandler,
-  setEncounterStageHandler,
+  intakeHandler,
   addVitalsHandler,
   addSymptomsHandler,
-  addNotesHandler,
-  addTriageHandler,
-  addTreatmentDecisionHandler,
+  nurseAssessmentHandler,
+  decisionHandler,
   getEncounterTimelineHandler
 } from "../controllers/encounterController.js";
 
@@ -15,42 +14,32 @@ const router = express.Router();
 
 /*
 =====================================
-ENCOUNTERS
+ENCOUNTER ENTRY
 =====================================
 */
 
-// 🔥 UPDATED: Supports BOTH legacy + FHIR input
-router.post("/", (req, res, next) => {
-  const { patientId, subject } = req.body;
-
-  if (!patientId && !subject?.reference) {
-    return res.status(400).json({
-      error: "Either patientId or subject.reference is required — resolve patient first"
-    });
-  }
-
-  next();
-}, createEncounterHandler);
-
-router.post("/:id/stage", setEncounterStageHandler);
+router.post("/", createEncounterHandler);
 
 /*
 =====================================
-EVENTS
+CLINICAL WORKFLOW (STRICT ORDER)
 =====================================
 */
 
+// 1️⃣ Patient Intake
+router.post("/:id/intake", intakeHandler);
+
+// 2️⃣ Vitals
 router.post("/:id/vitals", addVitalsHandler);
 
+// 3️⃣ Symptoms
 router.post("/:id/symptoms", addSymptomsHandler);
 
-router.post("/:id/notes", addNotesHandler);
+// 4️⃣ Nurse Assessment (AI will trigger automatically)
+router.post("/:id/nurse", nurseAssessmentHandler);
 
-// ❌ REMOVED: doctor-notes (moved to doctorNotesRoutes.js)
-
-router.post("/:id/triage", addTriageHandler);
-
-router.post("/:id/treatment-decision", addTreatmentDecisionHandler);
+// 5️⃣ Decision Engine (LOW / MEDIUM / ESCALATE)
+router.post("/:id/decision", decisionHandler);
 
 /*
 =====================================
