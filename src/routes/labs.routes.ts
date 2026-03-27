@@ -2,6 +2,7 @@ import express from "express";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
+import { processCaseState } from "../services/clinicalStateMachine.js";
 
 const router = express.Router();
 
@@ -20,18 +21,16 @@ const writeJSON = (file, data) => {
 /*
 ================================================
 CREATE LAB ORDER (FHIR: ServiceRequest)
-ENHANCED: Doctor Signature Enforcement
 ================================================
 */
 
-router.post("/:id/labs/service-request", (req, res) => {
+router.post("/:id/labs/service-request", async (req, res) => {
   try {
     const encounterId = req.params.id;
     const labOrder = req.body;
 
     const { doctorId } = labOrder;
 
-    // 🔥 MANDATORY DOCTOR ID
     if (!doctorId) {
       return res.status(400).json({
         error: "doctorId is required to create lab order"
@@ -61,8 +60,6 @@ router.post("/:id/labs/service-request", (req, res) => {
       priority: labOrder.priority || "routine",
       subject: encounter.subject,
       createdAt: timestamp,
-
-      // 🔥 SIGNATURE LAYER
       requestedBy: {
         doctorId,
         timestamp
@@ -71,7 +68,6 @@ router.post("/:id/labs/service-request", (req, res) => {
 
     encounter.labs.orders.push(newOrder);
 
-    // Timeline integration
     encounter.timeline = encounter.timeline || [];
     encounter.timeline.push({
       event: "Lab order created",
@@ -82,6 +78,12 @@ router.post("/:id/labs/service-request", (req, res) => {
       },
       timestamp
     });
+
+    // 🔥 INTELLIGENCE LOOP
+    const updatedEncounter = await processCaseState(encounter);
+
+    const index = encounters.findIndex(e => e.id === encounterId);
+    encounters[index] = updatedEncounter;
 
     writeJSON(encountersFile, encounters);
 
@@ -103,18 +105,16 @@ router.post("/:id/labs/service-request", (req, res) => {
 /*
 ================================================
 STORE LAB RESULT (FHIR: Observation)
-ENHANCED: Lab Tech Signature + Intelligence Trigger
 ================================================
 */
 
-router.post("/:id/labs/observation", (req, res) => {
+router.post("/:id/labs/observation", async (req, res) => {
   try {
     const encounterId = req.params.id;
     const labResult = req.body;
 
     const { labTechId } = labResult;
 
-    // 🔥 MANDATORY LAB TECH ID
     if (!labTechId) {
       return res.status(400).json({
         error: "labTechId is required to record lab result"
@@ -135,12 +135,6 @@ router.post("/:id/labs/observation", (req, res) => {
 
     const timestamp = new Date().toISOString();
 
-    /*
-    --------------------------------------------
-    BASIC CLINICAL INTERPRETATION
-    --------------------------------------------
-    */
-
     let flag = "normal";
 
     if (labResult?.valueQuantity?.value !== undefined) {
@@ -159,8 +153,6 @@ router.post("/:id/labs/observation", (req, res) => {
       referenceRange: labResult.referenceRange || [],
       interpretation: flag,
       createdAt: timestamp,
-
-      // 🔥 SIGNATURE LAYER
       recordedBy: {
         labTechId,
         timestamp
@@ -168,12 +160,6 @@ router.post("/:id/labs/observation", (req, res) => {
     };
 
     encounter.labs.results.push(newResult);
-
-    /*
-    --------------------------------------------
-    TIMELINE
-    --------------------------------------------
-    */
 
     encounter.timeline = encounter.timeline || [];
     encounter.timeline.push({
@@ -187,13 +173,6 @@ router.post("/:id/labs/observation", (req, res) => {
       timestamp
     });
 
-    /*
-    --------------------------------------------
-    🔥 OPTIONAL (NEXT STEP READY)
-    Trigger escalation flag
-    --------------------------------------------
-    */
-
     if (flag !== "normal") {
       encounter.flags = encounter.flags || [];
       encounter.flags.push({
@@ -203,6 +182,12 @@ router.post("/:id/labs/observation", (req, res) => {
         timestamp
       });
     }
+
+    // 🔥 INTELLIGENCE LOOP (CRITICAL)
+    const updatedEncounter = await processCaseState(encounter);
+
+    const index = encounters.findIndex(e => e.id === encounterId);
+    encounters[index] = updatedEncounter;
 
     writeJSON(encountersFile, encounters);
 
