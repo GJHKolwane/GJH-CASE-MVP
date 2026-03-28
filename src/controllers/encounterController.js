@@ -14,16 +14,18 @@ actionMap
 
 /*
 
-CREATE
+CREATE (SYSTEM OWNS patient_id)
 
 */
-
 export const createEncounterHandler = async (req, res) => {
 try {
-const { patient_id, national_id } = req.body || {};
+const { national_id } = req.body || {};
+
+// 🔥 ALWAYS system generated
+const patientId = crypto.randomUUID();
 
 const encounter = await createEncounterDB(
-  patient_id || crypto.randomUUID(),
+  patientId,
   national_id || null
 );
 
@@ -40,7 +42,6 @@ res.status(500).json({ error: "Failed to create encounter" });
 INTAKE
 
 */
-
 export const intakeHandler = async (req, res) => {
 try {
 const { id } = req.params;
@@ -82,7 +83,6 @@ res.status(500).json({ error: "Intake failed" });
 VITALS
 
 */
-
 export const addVitalsHandler = async (req, res) => {
 try {
 const { id } = req.params;
@@ -123,7 +123,6 @@ res.status(500).json({ error: "Vitals failed" });
 SYMPTOMS
 
 */
-
 export const addSymptomsHandler = async (req, res) => {
 try {
 const { id } = req.params;
@@ -164,7 +163,6 @@ res.status(500).json({ error: "Symptoms failed" });
 NURSE
 
 */
-
 export const nurseAssessmentHandler = async (req, res) => {
 try {
 const { id } = req.params;
@@ -205,7 +203,6 @@ res.status(500).json({ error: "Nurse step failed" });
 VALIDATION
 
 */
-
 export const validateEncounterHandler = async (req, res) => {
 try {
 const { id } = req.params;
@@ -250,7 +247,6 @@ res.status(500).json({ error: "Validation failed" });
 DECISION
 
 */
-
 export const decisionHandler = async (req, res) => {
 try {
 const { id } = req.params;
@@ -292,7 +288,6 @@ res.status(500).json({ error: "Decision failed" });
 TIMELINE
 
 */
-
 export const getEncounterTimelineHandler = async (req, res) => {
 try {
 const record = await getEncounterDB(req.params.id);
@@ -318,7 +313,6 @@ res.status(500).json({ error: "Timeline fetch failed" });
 GET ENCOUNTER
 
 */
-
 export const getEncounterHandler = async (req, res) => {
 try {
 const { id } = req.params;
