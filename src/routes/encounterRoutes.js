@@ -7,7 +7,8 @@ addVitalsHandler,
 addSymptomsHandler,
 nurseAssessmentHandler,
 decisionHandler,
-getEncounterTimelineHandler
+getEncounterTimelineHandler,
+validateEncounterHandler
 } from "../controllers/encounterController.js";
 
 import { getEncounterById } from "../models/encounterModel.js";
@@ -24,7 +25,7 @@ router.post("/", createEncounterHandler);
 
 /*
 
-GET ENCOUNTER (🔥 CRITICAL FIX)
+GET ENCOUNTER
 
 */
 
@@ -56,7 +57,7 @@ CLINICAL WORKFLOW (STRICT ORDER)
 
 */
 
-// 1️⃣ Patient Intake
+// 1️⃣ Intake
 router.post("/:id/intake", intakeHandler);
 
 // 2️⃣ Vitals
@@ -65,10 +66,13 @@ router.post("/:id/vitals", addVitalsHandler);
 // 3️⃣ Symptoms
 router.post("/:id/symptoms", addSymptomsHandler);
 
-// 4️⃣ Nurse Assessment (AI will trigger automatically)
+// 4️⃣ Nurse
 router.post("/:id/nurse", nurseAssessmentHandler);
 
-// 5️⃣ Decision Engine (LOW / MEDIUM / ESCALATE)
+// 5️⃣ 🔥 VALIDATION (NEW — HUMAN IN LOOP)
+router.post("/:id/validate", validateEncounterHandler);
+
+// 6️⃣ Decision (ONLY AFTER VALIDATION — enforced by FSM)
 router.post("/:id/decision", decisionHandler);
 
 /*
