@@ -2,7 +2,7 @@ import axios from "axios";
 
 /*
 ================================================
-GJHEALTH STATE MACHINE (SAFE + HUMAN-IN-LOOP)
+GJHEALTH STATE MACHINE (STRICT CLINICAL FLOW)
 ================================================
 */
 
@@ -19,10 +19,13 @@ const transitions = {
 
   ai_triage_completed: ["soan_generated"],
 
-  // 🔥 NEW CRITICAL STEP
+  // 🔥 HUMAN IN THE LOOP (FIXED)
   soan_generated: ["awaiting_clinician_validation"],
 
-  awaiting_clinician_validation: ["decision_pending"],
+  awaiting_clinician_validation: [
+    "decision_pending",
+    "doctor_escalation"
+  ],
 
   decision_pending: [
     "treatment_applied",
@@ -71,7 +74,7 @@ export const actionMap = {
   triage: "ai_triage_completed",
   soan: "soan_generated",
 
-  // 🔥 NEW
+  // 🔥 NEW STEP
   validate: "awaiting_clinician_validation",
 
   decision: "decision_pending",
@@ -149,7 +152,8 @@ export async function processCaseState(encounter) {
   if (
     updated.vitals &&
     updated.symptoms &&
-    !updated.triage
+    !updated.triage &&
+    updated.status === "nurse_assessment_completed"
   ) {
     const check = enforceTransition(
       updated.status,
@@ -165,7 +169,7 @@ export async function processCaseState(encounter) {
   }
 
   /*
-  AUTO SOAN
+  AUTO SOAN (NOW WAITS FOR HUMAN)
   */
 
   if (updated.triage && updated.status === "ai_triage_completed") {
@@ -180,4 +184,4 @@ export async function processCaseState(encounter) {
   }
 
   return updated;
-    }
+}
