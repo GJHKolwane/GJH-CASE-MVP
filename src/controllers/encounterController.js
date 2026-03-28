@@ -201,26 +201,33 @@ GET TIMELINE
 ================================================
 */
 
-export const getEncounterTimelineHandler = (req, res) => {
+export const getEncounterTimelineHandler = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const encounters = readJSON(encountersFile);
-    const encounter = encounters.find(e => e.id === id);
+    const encounter = await getEncounterById(id);
 
     if (!encounter) {
-      return res.status(404).json({ error: "Encounter not found" });
+      return res.status(404).json({
+        error: "Encounter not found"
+      });
     }
 
+    // 🔥 SAFE GUARD (CRITICAL)
+    const timeline = encounter.timeline || [];
+
     return res.json({
-      timeline: encounter.timeline || []
+      encounterId: id,
+      state: encounter.state || encounter.status,
+      timeline
     });
 
-  } catch (err) {
-    console.error("TIMELINE ERROR:", err);
+  } catch (error) {
+    console.error("getEncounterTimelineHandler error:", error);
 
     return res.status(500).json({
       error: "Failed to fetch timeline"
     });
   }
 };
+
