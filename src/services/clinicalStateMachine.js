@@ -1,5 +1,5 @@
 import axios from "axios";
-
+import { evaluateTriage } from "./triageEngine.js";
 /*
 ================================================
 GJHEALTH STATE MACHINE (STRICT CLINICAL FLOW)
@@ -166,8 +166,11 @@ export async function processCaseState(encounter) {
     if (!check.allowed) return updated;
 
     // --- AI TRIAGE ---
-    const triage = await triggerTriage(updated);
-
+    
+    const triage = evaluateTriage({
+  vitals: updated.vitals,
+  symptoms: updated.symptoms
+});
     updated.triage = triage;
 
     // --- SOAN GENERATION ---
