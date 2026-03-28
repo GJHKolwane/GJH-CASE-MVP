@@ -1,5 +1,7 @@
 import express from "express";
 import cors from "cors";
+import { syncOfflineQueue } from "./offline/offlineSync.js";
+
 
 /*
 =========================================
@@ -56,6 +58,9 @@ app.get("/", (req, res) => {
 SERVER
 =========================================
 */
+setInterval(() => {
+  syncOfflineQueue();
+}, 10000); // every 10s
 
 const PORT = 5050;
 
