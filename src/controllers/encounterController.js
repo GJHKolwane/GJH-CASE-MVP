@@ -1,6 +1,11 @@
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
+import {
+  createEncounter,
+  getEncounterById,
+  updateEncounter
+} from "../models/encounterModel.js";
 
 import {
   processCaseState,
