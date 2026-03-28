@@ -12,6 +12,7 @@ import {
   getEncounterTimelineHandler
 } from "../controllers/encounterController.js";
 
+console.log("✅ encounterRoutes loaded");
 const router = express.Router();
 
 /*
