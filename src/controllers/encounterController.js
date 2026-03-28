@@ -14,7 +14,19 @@ import {
 
 /*
 ================================================
-CREATE (SYSTEM OWNS patient_id)
+HELPER — CLEAN DATA OBJECT
+================================================
+*/
+function cleanData(data) {
+  const cleaned = { ...(data || {}) };
+  delete cleaned.status; // 🔥 REMOVE ANY STRAY STATUS
+  cleaned.timeline = cleaned.timeline || [];
+  return cleaned;
+}
+
+/*
+================================================
+CREATE
 ================================================
 */
 export const createEncounterHandler = async (req, res) => {
@@ -48,20 +60,22 @@ export const intakeHandler = async (req, res) => {
     const record = await getEncounterDB(id);
     if (!record) return res.status(404).json({ error: "Not found" });
 
-    let data = record.encounter_data;
+    let data = cleanData(record.encounter_data);
 
     const check = enforceTransition(record.status, actionMap.intake);
     if (!check.allowed) return res.status(400).json(check);
 
     data.intake = req.body;
 
-    data.timeline = data.timeline || [];
     data.timeline.push({
       event: "Patient intake completed",
       timestamp: new Date().toISOString()
     });
 
-    const updatedData = await processCaseState(data);
+    const updatedData = await processCaseState({
+      ...data,
+      status: actionMap.intake // 🔥 PASS STATUS ONLY INTO ENGINE
+    });
 
     const updated = await updateEncounterDB(
       id,
@@ -89,20 +103,22 @@ export const addVitalsHandler = async (req, res) => {
     const record = await getEncounterDB(id);
     if (!record) return res.status(404).json({ error: "Not found" });
 
-    let data = record.encounter_data;
+    let data = cleanData(record.encounter_data);
 
     const check = enforceTransition(record.status, actionMap.vitals);
     if (!check.allowed) return res.status(400).json(check);
 
     data.vitals = req.body;
 
-    data.timeline = data.timeline || [];
     data.timeline.push({
       event: "Vitals recorded",
       timestamp: new Date().toISOString()
     });
 
-    const updatedData = await processCaseState(data);
+    const updatedData = await processCaseState({
+      ...data,
+      status: actionMap.vitals
+    });
 
     const updated = await updateEncounterDB(
       id,
@@ -130,20 +146,22 @@ export const addSymptomsHandler = async (req, res) => {
     const record = await getEncounterDB(id);
     if (!record) return res.status(404).json({ error: "Not found" });
 
-    let data = record.encounter_data;
+    let data = cleanData(record.encounter_data);
 
     const check = enforceTransition(record.status, actionMap.symptoms);
     if (!check.allowed) return res.status(400).json(check);
 
     data.symptoms = req.body;
 
-    data.timeline = data.timeline || [];
     data.timeline.push({
       event: "Symptoms recorded",
       timestamp: new Date().toISOString()
     });
 
-    const updatedData = await processCaseState(data);
+    const updatedData = await processCaseState({
+      ...data,
+      status: actionMap.symptoms
+    });
 
     const updated = await updateEncounterDB(
       id,
@@ -161,7 +179,7 @@ export const addSymptomsHandler = async (req, res) => {
 
 /*
 ================================================
-NURSE (AI TRIGGERS HERE)
+NURSE (AI TRIGGER)
 ================================================
 */
 export const nurseAssessmentHandler = async (req, res) => {
@@ -171,20 +189,22 @@ export const nurseAssessmentHandler = async (req, res) => {
     const record = await getEncounterDB(id);
     if (!record) return res.status(404).json({ error: "Not found" });
 
-    let data = record.encounter_data;
+    let data = cleanData(record.encounter_data);
 
     const check = enforceTransition(record.status, actionMap.nurse);
     if (!check.allowed) return res.status(400).json(check);
 
     data.nurseNotes = req.body;
 
-    data.timeline = data.timeline || [];
     data.timeline.push({
       event: "Nurse assessment completed",
       timestamp: new Date().toISOString()
     });
 
-    const updatedData = await processCaseState(data);
+    const updatedData = await processCaseState({
+      ...data,
+      status: actionMap.nurse
+    });
 
     const updated = await updateEncounterDB(
       id,
@@ -212,7 +232,7 @@ export const validateEncounterHandler = async (req, res) => {
     const record = await getEncounterDB(id);
     if (!record) return res.status(404).json({ error: "Not found" });
 
-    let data = record.encounter_data;
+    let data = cleanData(record.encounter_data);
 
     const check = enforceTransition(record.status, actionMap.validate);
     if (!check.allowed) return res.status(400).json(check);
@@ -223,13 +243,15 @@ export const validateEncounterHandler = async (req, res) => {
       timestamp: new Date().toISOString()
     };
 
-    data.timeline = data.timeline || [];
     data.timeline.push({
       event: "Clinician validation completed",
       timestamp: new Date().toISOString()
     });
 
-    const updatedData = await processCaseState(data);
+    const updatedData = await processCaseState({
+      ...data,
+      status: actionMap.validate
+    });
 
     const updated = await updateEncounterDB(
       id,
@@ -258,20 +280,22 @@ export const decisionHandler = async (req, res) => {
     const record = await getEncounterDB(id);
     if (!record) return res.status(404).json({ error: "Not found" });
 
-    let data = record.encounter_data;
+    let data = cleanData(record.encounter_data);
 
     const check = enforceTransition(record.status, actionMap.decision);
     if (!check.allowed) return res.status(400).json(check);
 
     data.decision = type;
 
-    data.timeline = data.timeline || [];
     data.timeline.push({
       event: `Decision made: ${type}`,
       timestamp: new Date().toISOString()
     });
 
-    const updatedData = await processCaseState(data);
+    const updatedData = await processCaseState({
+      ...data,
+      status: actionMap.decision
+    });
 
     const updated = await updateEncounterDB(
       id,
@@ -303,7 +327,7 @@ export const getEncounterTimelineHandler = async (req, res) => {
     res.json({
       encounterId: record.id,
       state: record.status,
-      timeline: data.timeline || []
+      timeline: data?.timeline || []
     });
 
   } catch (err) {
