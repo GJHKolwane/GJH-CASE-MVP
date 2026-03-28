@@ -1,3 +1,5 @@
+import crypto from "crypto";
+
 import {
 createEncounterDB,
 getEncounterDB,
@@ -18,8 +20,15 @@ CREATE
 
 export const createEncounterHandler = async (req, res) => {
 try {
-const encounter = await createEncounterDB();
+const { patient_id, national_id } = req.body || {};
+
+const encounter = await createEncounterDB(
+  patient_id || crypto.randomUUID(),
+  national_id || null
+);
+
 res.json(encounter);
+
 } catch (err) {
 console.error(err);
 res.status(500).json({ error: "Failed to create encounter" });
@@ -45,7 +54,6 @@ const check = enforceTransition(record.status, actionMap.intake);
 if (!check.allowed) return res.status(400).json(check);
 
 data.intake = req.body;
-record.status = actionMap.intake;
 
 data.timeline = data.timeline || [];
 data.timeline.push({
@@ -88,7 +96,6 @@ const check = enforceTransition(record.status, actionMap.vitals);
 if (!check.allowed) return res.status(400).json(check);
 
 data.vitals = req.body;
-record.status = actionMap.vitals;
 
 data.timeline.push({
   event: "Vitals recorded",
@@ -130,7 +137,6 @@ const check = enforceTransition(record.status, actionMap.symptoms);
 if (!check.allowed) return res.status(400).json(check);
 
 data.symptoms = req.body;
-record.status = actionMap.symptoms;
 
 data.timeline.push({
   event: "Symptoms recorded",
@@ -172,7 +178,6 @@ const check = enforceTransition(record.status, actionMap.nurse);
 if (!check.allowed) return res.status(400).json(check);
 
 data.nurseNotes = req.body;
-record.status = actionMap.nurse;
 
 data.timeline.push({
   event: "Nurse assessment completed",
@@ -219,8 +224,6 @@ data.validation = {
   timestamp: new Date().toISOString()
 };
 
-record.status = actionMap.validate;
-
 data.timeline.push({
   event: "Clinician validation completed",
   timestamp: new Date().toISOString()
@@ -262,7 +265,6 @@ const check = enforceTransition(record.status, actionMap.decision);
 if (!check.allowed) return res.status(400).json(check);
 
 data.decision = type;
-record.status = actionMap.decision;
 
 data.timeline.push({
   event: `Decision made: ${type}`,
@@ -312,25 +314,25 @@ res.status(500).json({ error: "Timeline fetch failed" });
 };
 
 /*
-================================================
+
 GET ENCOUNTER
-================================================
+
 */
 
 export const getEncounterHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
+try {
+const { id } = req.params;
 
-    const record = await getEncounterDB(id);
+const record = await getEncounterDB(id);
 
-    if (!record) {
-      return res.status(404).json({ error: "Not found" });
-    }
+if (!record) {
+  return res.status(404).json({ error: "Not found" });
+}
 
-    res.json(record);
+res.json(record);
 
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Fetch failed" });
-  }
+} catch (err) {
+console.error(err);
+res.status(500).json({ error: "Fetch failed" });
+}
 };
