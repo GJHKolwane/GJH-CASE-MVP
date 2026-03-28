@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 
 import encounterRoutes from "./routes/encounterRoutes.js";
+console.log("✅ server started, routes importing...");
 
 const app = express();
 
