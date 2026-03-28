@@ -236,3 +236,38 @@ export const getEncounterTimelineHandler = async (req, res) => {
   }
 };
 
+/*
+================================================
+6️⃣ CLINICIAN VALIDATION (🔥 CRITICAL STEP)
+================================================
+*/
+
+export const validateEncounterHandler = async (req, res) => {
+  const { id } = req.params;
+  const encounters = read();
+
+  const e = encounters.find(x => x.id === id);
+
+  const next = actionMap.validate;
+  const check = enforceTransition(e.status, next);
+
+  if (!check.allowed) return res.status(400).json(check);
+
+  e.validation = {
+    clinician: req.body.clinician || "unknown",
+    notes: req.body.notes || "validated",
+    timestamp: new Date().toISOString()
+  };
+
+  e.status = next;
+
+  e.timeline.push({
+    event: "Clinician validation completed",
+    timestamp: new Date().toISOString()
+  });
+
+  const updated = await processCaseState(e);
+
+  write(encounters);
+  res.json(updated);
+};
