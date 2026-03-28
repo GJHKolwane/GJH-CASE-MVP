@@ -1,11 +1,6 @@
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
-import {
-  createEncounter,
-  getEncounterById,
-  updateEncounter
-} from "../models/encounterModel.js";
 
 import {
   processCaseState,
@@ -15,16 +10,17 @@ import {
 
 const file = path.resolve("data/encounters.json");
 
-const read = () => fs.existsSync(file)
-  ? JSON.parse(fs.readFileSync(file))
-  : [];
+const read = () =>
+  fs.existsSync(file)
+    ? JSON.parse(fs.readFileSync(file))
+    : [];
 
 const write = (d) =>
   fs.writeFileSync(file, JSON.stringify(d, null, 2));
 
 /*
 ================================================
-CREATE (PATIENT ARRIVES)
+CREATE
 ================================================
 */
 
@@ -46,7 +42,7 @@ export const createEncounterHandler = (req, res) => {
 
 /*
 ================================================
-1️⃣ PATIENT INTAKE
+INTAKE
 ================================================
 */
 
@@ -56,13 +52,11 @@ export const intakeHandler = async (req, res) => {
 
   const e = encounters.find(x => x.id === id);
 
-  const next = actionMap.intake;
-  const check = enforceTransition(e.status, next);
-
+  const check = enforceTransition(e.status, actionMap.intake);
   if (!check.allowed) return res.status(400).json(check);
 
   e.intake = req.body;
-  e.status = next;
+  e.status = actionMap.intake;
 
   e.timeline.push({
     event: "Patient intake completed",
@@ -77,7 +71,7 @@ export const intakeHandler = async (req, res) => {
 
 /*
 ================================================
-2️⃣ VITALS
+VITALS
 ================================================
 */
 
@@ -87,13 +81,11 @@ export const addVitalsHandler = async (req, res) => {
 
   const e = encounters.find(x => x.id === id);
 
-  const next = actionMap.vitals;
-  const check = enforceTransition(e.status, next);
-
+  const check = enforceTransition(e.status, actionMap.vitals);
   if (!check.allowed) return res.status(400).json(check);
 
   e.vitals = req.body;
-  e.status = next;
+  e.status = actionMap.vitals;
 
   e.timeline.push({
     event: "Vitals recorded",
@@ -108,7 +100,7 @@ export const addVitalsHandler = async (req, res) => {
 
 /*
 ================================================
-3️⃣ SYMPTOMS
+SYMPTOMS
 ================================================
 */
 
@@ -118,13 +110,11 @@ export const addSymptomsHandler = async (req, res) => {
 
   const e = encounters.find(x => x.id === id);
 
-  const next = actionMap.symptoms;
-  const check = enforceTransition(e.status, next);
-
+  const check = enforceTransition(e.status, actionMap.symptoms);
   if (!check.allowed) return res.status(400).json(check);
 
   e.symptoms = req.body;
-  e.status = next;
+  e.status = actionMap.symptoms;
 
   e.timeline.push({
     event: "Symptoms recorded",
@@ -139,7 +129,7 @@ export const addSymptomsHandler = async (req, res) => {
 
 /*
 ================================================
-4️⃣ NURSE ASSESSMENT (AI WILL FOLLOW)
+NURSE
 ================================================
 */
 
@@ -149,13 +139,11 @@ export const nurseAssessmentHandler = async (req, res) => {
 
   const e = encounters.find(x => x.id === id);
 
-  const next = actionMap.nurse;
-  const check = enforceTransition(e.status, next);
-
+  const check = enforceTransition(e.status, actionMap.nurse);
   if (!check.allowed) return res.status(400).json(check);
 
   e.nurseNotes = req.body;
-  e.status = next;
+  e.status = actionMap.nurse;
 
   e.timeline.push({
     event: "Nurse assessment completed",
@@ -170,24 +158,56 @@ export const nurseAssessmentHandler = async (req, res) => {
 
 /*
 ================================================
-5️⃣ DECISION (LOW / MEDIUM)
+🔥 VALIDATION (NEW)
+================================================
+*/
+
+export const validateEncounterHandler = async (req, res) => {
+  const { id } = req.params;
+  const encounters = read();
+
+  const e = encounters.find(x => x.id === id);
+
+  const check = enforceTransition(e.status, actionMap.validate);
+  if (!check.allowed) return res.status(400).json(check);
+
+  e.validation = {
+    clinician: req.body.clinician,
+    notes: req.body.notes,
+    timestamp: new Date().toISOString()
+  };
+
+  e.status = actionMap.validate;
+
+  e.timeline.push({
+    event: "Clinician validation completed",
+    timestamp: new Date().toISOString()
+  });
+
+  const updated = await processCaseState(e);
+
+  write(encounters);
+  res.json(updated);
+};
+
+/*
+================================================
+DECISION
 ================================================
 */
 
 export const decisionHandler = async (req, res) => {
   const { id } = req.params;
-  const { type } = req.body; // low / medium / escalate
+  const { type } = req.body;
 
   const encounters = read();
   const e = encounters.find(x => x.id === id);
 
-  const next = actionMap.decision;
-  const check = enforceTransition(e.status, next);
-
+  const check = enforceTransition(e.status, actionMap.decision);
   if (!check.allowed) return res.status(400).json(check);
 
   e.decision = type;
-  e.status = next;
+  e.status = actionMap.decision;
 
   e.timeline.push({
     event: `Decision made: ${type}`,
@@ -202,72 +222,19 @@ export const decisionHandler = async (req, res) => {
 
 /*
 ================================================
-GET TIMELINE
+TIMELINE
 ================================================
 */
 
-export const getEncounterTimelineHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const encounter = await getEncounterById(id);
-
-    if (!encounter) {
-      return res.status(404).json({
-        error: "Encounter not found"
-      });
-    }
-
-    // 🔥 SAFE GUARD (CRITICAL)
-    const timeline = encounter.timeline || [];
-
-    return res.json({
-      encounterId: id,
-      state: encounter.state || encounter.status,
-      timeline
-    });
-
-  } catch (error) {
-    console.error("getEncounterTimelineHandler error:", error);
-
-    return res.status(500).json({
-      error: "Failed to fetch timeline"
-    });
-  }
-};
-
-/*
-================================================
-6️⃣ CLINICIAN VALIDATION (🔥 CRITICAL STEP)
-================================================
-*/
-
-export const validateEncounterHandler = async (req, res) => {
-  const { id } = req.params;
+export const getEncounterTimelineHandler = (req, res) => {
   const encounters = read();
+  const e = encounters.find(x => x.id === req.params.id);
 
-  const e = encounters.find(x => x.id === id);
+  if (!e) return res.status(404).json({ error: "Not found" });
 
-  const next = actionMap.validate;
-  const check = enforceTransition(e.status, next);
-
-  if (!check.allowed) return res.status(400).json(check);
-
-  e.validation = {
-    clinician: req.body.clinician || "unknown",
-    notes: req.body.notes || "validated",
-    timestamp: new Date().toISOString()
-  };
-
-  e.status = next;
-
-  e.timeline.push({
-    event: "Clinician validation completed",
-    timestamp: new Date().toISOString()
+  res.json({
+    encounterId: e.id,
+    state: e.status,
+    timeline: e.timeline || []
   });
-
-  const updated = await processCaseState(e);
-
-  write(encounters);
-  res.json(updated);
 };
