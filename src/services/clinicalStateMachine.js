@@ -15,12 +15,8 @@ const transitions = {
 
   symptoms_recorded: ["nurse_assessment_completed"],
 
-  nurse_assessment_completed: ["ai_triage_completed"],
-
-  ai_triage_completed: ["soan_generated"],
-
-  // 🔥 HUMAN IN THE LOOP (FIXED)
-  soan_generated: ["awaiting_clinician_validation"],
+  // 🔥 AUTO FLOW (NO MANUAL BREAK)
+  nurse_assessment_completed: ["awaiting_clinician_validation"],
 
   awaiting_clinician_validation: [
     "decision_pending",
@@ -71,10 +67,8 @@ export const actionMap = {
   vitals: "vitals_recorded",
   symptoms: "symptoms_recorded",
   nurse: "nurse_assessment_completed",
-  triage: "ai_triage_completed",
-  soan: "soan_generated",
 
-  // 🔥 NEW STEP
+  // 🔥 HUMAN ENTRY POINT
   validate: "awaiting_clinician_validation",
 
   decision: "decision_pending",
@@ -116,7 +110,7 @@ export function enforceTransition(current, next) {
 
 /*
 ================================================
-AI TRIAGE (AUTO)
+AI TRIAGE SERVICE
 ================================================
 */
 
@@ -127,8 +121,12 @@ async function triggerTriage(caseData) {
       { case: caseData }
     );
     return res.data;
-  } catch {
-    return { severity: "MEDIUM", note: "fallback" };
+  } catch (err) {
+    console.warn("⚠️ AI TRIAGE FALLBACK USED");
+    return {
+      severity: "medium",
+      recommendation: "Further evaluation required"
+    };
   }
 }
 
@@ -145,42 +143,51 @@ export async function processCaseState(encounter) {
     updated.status = "created";
   }
 
-  /*
-  AUTO TRIAGE
-  */
-
-  if (
-    updated.vitals &&
-    updated.symptoms &&
-    !updated.triage &&
-    updated.status === "nurse_assessment_completed"
-  ) {
-    const check = enforceTransition(
-      updated.status,
-      actionMap.triage
-    );
-
-    if (check.allowed) {
-      const triage = await triggerTriage(updated);
-
-      updated.triage = triage;
-      updated.status = actionMap.triage;
-    }
+  // Ensure timeline exists
+  if (!updated.timeline) {
+    updated.timeline = [];
   }
 
   /*
-  AUTO SOAN (NOW WAITS FOR HUMAN)
+  ========================================================
+  🔥 CORE INTELLIGENCE BLOCK (AUTO AFTER NURSE)
+  ========================================================
   */
 
-  if (updated.triage && updated.status === "ai_triage_completed") {
+  if (updated.status === "nurse_assessment_completed") {
+
+    console.log("🧠 AI TRIAGE + SOAN PIPELINE STARTED");
+
+    const check = enforceTransition(
+      updated.status,
+      "awaiting_clinician_validation"
+    );
+
+    if (!check.allowed) return updated;
+
+    // --- AI TRIAGE ---
+    const triage = await triggerTriage(updated);
+
+    updated.triage = triage;
+
+    // --- SOAN GENERATION ---
     updated.soan = {
-      subjective: updated.symptoms,
-      objective: updated.vitals,
-      assessment: updated.triage,
-      plan: "Awaiting clinician validation"
+      subjective: updated.symptoms || {},
+      objective: updated.vitals || {},
+      assessment: triage,
+      plan: "Doctor review required"
     };
 
-    updated.status = actionMap.soan;
+    // --- STATUS MOVE (DIRECT, NO FRAGMENTS) ---
+    updated.status = "awaiting_clinician_validation";
+
+    // --- TIMELINE ---
+    updated.timeline.push({
+      event: "AI triage + SOAN generated",
+      timestamp: new Date().toISOString()
+    });
+
+    console.log("✅ AI COMPLETE → awaiting_clinician_validation");
   }
 
   return updated;
