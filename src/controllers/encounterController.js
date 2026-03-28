@@ -1,240 +1,312 @@
-import fs from "fs";
-import path from "path";
-import crypto from "crypto";
+import {
+createEncounterDB,
+getEncounterDB,
+updateEncounterDB
+} from "../services/dbService.js";
 
 import {
-  processCaseState,
-  enforceTransition,
-  actionMap
+processCaseState,
+enforceTransition,
+actionMap
 } from "../services/clinicalStateMachine.js";
 
-const file = path.resolve("data/encounters.json");
-
-const read = () =>
-  fs.existsSync(file)
-    ? JSON.parse(fs.readFileSync(file))
-    : [];
-
-const write = (d) =>
-  fs.writeFileSync(file, JSON.stringify(d, null, 2));
-
 /*
-================================================
+
 CREATE
-================================================
+
 */
 
-export const createEncounterHandler = (req, res) => {
-  const encounters = read();
-
-  const encounter = {
-    id: crypto.randomUUID(),
-    status: "created",
-    timeline: [],
-    createdAt: new Date().toISOString()
-  };
-
-  encounters.push(encounter);
-  write(encounters);
-
-  res.json(encounter);
+export const createEncounterHandler = async (req, res) => {
+try {
+const encounter = await createEncounterDB();
+res.json(encounter);
+} catch (err) {
+console.error(err);
+res.status(500).json({ error: "Failed to create encounter" });
+}
 };
 
 /*
-================================================
+
 INTAKE
-================================================
+
 */
 
 export const intakeHandler = async (req, res) => {
-  const { id } = req.params;
-  const encounters = read();
+try {
+const { id } = req.params;
 
-  const e = encounters.find(x => x.id === id);
+const record = await getEncounterDB(id);
+if (!record) return res.status(404).json({ error: "Not found" });
 
-  const check = enforceTransition(e.status, actionMap.intake);
-  if (!check.allowed) return res.status(400).json(check);
+let data = record.encounter_data;
 
-  e.intake = req.body;
-  e.status = actionMap.intake;
+const check = enforceTransition(record.status, actionMap.intake);
+if (!check.allowed) return res.status(400).json(check);
 
-  e.timeline.push({
-    event: "Patient intake completed",
-    timestamp: new Date().toISOString()
-  });
+data.intake = req.body;
+record.status = actionMap.intake;
 
-  const updated = await processCaseState(e);
+data.timeline = data.timeline || [];
+data.timeline.push({
+  event: "Patient intake completed",
+  timestamp: new Date().toISOString()
+});
 
-  write(encounters);
-  res.json(updated);
+const updatedData = await processCaseState(data);
+
+const updated = await updateEncounterDB(
+  id,
+  updatedData,
+  actionMap.intake
+);
+
+res.json(updated);
+
+} catch (err) {
+console.error(err);
+res.status(500).json({ error: "Intake failed" });
+}
 };
 
 /*
-================================================
+
 VITALS
-================================================
+
 */
 
 export const addVitalsHandler = async (req, res) => {
-  const { id } = req.params;
-  const encounters = read();
+try {
+const { id } = req.params;
 
-  const e = encounters.find(x => x.id === id);
+const record = await getEncounterDB(id);
+if (!record) return res.status(404).json({ error: "Not found" });
 
-  const check = enforceTransition(e.status, actionMap.vitals);
-  if (!check.allowed) return res.status(400).json(check);
+let data = record.encounter_data;
 
-  e.vitals = req.body;
-  e.status = actionMap.vitals;
+const check = enforceTransition(record.status, actionMap.vitals);
+if (!check.allowed) return res.status(400).json(check);
 
-  e.timeline.push({
-    event: "Vitals recorded",
-    timestamp: new Date().toISOString()
-  });
+data.vitals = req.body;
+record.status = actionMap.vitals;
 
-  const updated = await processCaseState(e);
+data.timeline.push({
+  event: "Vitals recorded",
+  timestamp: new Date().toISOString()
+});
 
-  write(encounters);
-  res.json(updated);
+const updatedData = await processCaseState(data);
+
+const updated = await updateEncounterDB(
+  id,
+  updatedData,
+  actionMap.vitals
+);
+
+res.json(updated);
+
+} catch (err) {
+console.error(err);
+res.status(500).json({ error: "Vitals failed" });
+}
 };
 
 /*
-================================================
+
 SYMPTOMS
-================================================
+
 */
 
 export const addSymptomsHandler = async (req, res) => {
-  const { id } = req.params;
-  const encounters = read();
+try {
+const { id } = req.params;
 
-  const e = encounters.find(x => x.id === id);
+const record = await getEncounterDB(id);
+if (!record) return res.status(404).json({ error: "Not found" });
 
-  const check = enforceTransition(e.status, actionMap.symptoms);
-  if (!check.allowed) return res.status(400).json(check);
+let data = record.encounter_data;
 
-  e.symptoms = req.body;
-  e.status = actionMap.symptoms;
+const check = enforceTransition(record.status, actionMap.symptoms);
+if (!check.allowed) return res.status(400).json(check);
 
-  e.timeline.push({
-    event: "Symptoms recorded",
-    timestamp: new Date().toISOString()
-  });
+data.symptoms = req.body;
+record.status = actionMap.symptoms;
 
-  const updated = await processCaseState(e);
+data.timeline.push({
+  event: "Symptoms recorded",
+  timestamp: new Date().toISOString()
+});
 
-  write(encounters);
-  res.json(updated);
+const updatedData = await processCaseState(data);
+
+const updated = await updateEncounterDB(
+  id,
+  updatedData,
+  actionMap.symptoms
+);
+
+res.json(updated);
+
+} catch (err) {
+console.error(err);
+res.status(500).json({ error: "Symptoms failed" });
+}
 };
 
 /*
-================================================
+
 NURSE
-================================================
+
 */
 
 export const nurseAssessmentHandler = async (req, res) => {
-  const { id } = req.params;
-  const encounters = read();
+try {
+const { id } = req.params;
 
-  const e = encounters.find(x => x.id === id);
+const record = await getEncounterDB(id);
+if (!record) return res.status(404).json({ error: "Not found" });
 
-  const check = enforceTransition(e.status, actionMap.nurse);
-  if (!check.allowed) return res.status(400).json(check);
+let data = record.encounter_data;
 
-  e.nurseNotes = req.body;
-  e.status = actionMap.nurse;
+const check = enforceTransition(record.status, actionMap.nurse);
+if (!check.allowed) return res.status(400).json(check);
 
-  e.timeline.push({
-    event: "Nurse assessment completed",
-    timestamp: new Date().toISOString()
-  });
+data.nurseNotes = req.body;
+record.status = actionMap.nurse;
 
-  const updated = await processCaseState(e);
+data.timeline.push({
+  event: "Nurse assessment completed",
+  timestamp: new Date().toISOString()
+});
 
-  write(encounters);
-  res.json(updated);
+const updatedData = await processCaseState(data);
+
+const updated = await updateEncounterDB(
+  id,
+  updatedData,
+  actionMap.nurse
+);
+
+res.json(updated);
+
+} catch (err) {
+console.error(err);
+res.status(500).json({ error: "Nurse step failed" });
+}
 };
 
 /*
-================================================
-🔥 VALIDATION (NEW)
-================================================
+
+VALIDATION
+
 */
 
 export const validateEncounterHandler = async (req, res) => {
-  const { id } = req.params;
-  const encounters = read();
+try {
+const { id } = req.params;
 
-  const e = encounters.find(x => x.id === id);
+const record = await getEncounterDB(id);
+if (!record) return res.status(404).json({ error: "Not found" });
 
-  const check = enforceTransition(e.status, actionMap.validate);
-  if (!check.allowed) return res.status(400).json(check);
+let data = record.encounter_data;
 
-  e.validation = {
-    clinician: req.body.clinician,
-    notes: req.body.notes,
-    timestamp: new Date().toISOString()
-  };
+const check = enforceTransition(record.status, actionMap.validate);
+if (!check.allowed) return res.status(400).json(check);
 
-  e.status = actionMap.validate;
+data.validation = {
+  clinician: req.body.clinician,
+  notes: req.body.notes,
+  timestamp: new Date().toISOString()
+};
 
-  e.timeline.push({
-    event: "Clinician validation completed",
-    timestamp: new Date().toISOString()
-  });
+record.status = actionMap.validate;
 
-  const updated = await processCaseState(e);
+data.timeline.push({
+  event: "Clinician validation completed",
+  timestamp: new Date().toISOString()
+});
 
-  write(encounters);
-  res.json(updated);
+const updatedData = await processCaseState(data);
+
+const updated = await updateEncounterDB(
+  id,
+  updatedData,
+  actionMap.validate
+);
+
+res.json(updated);
+
+} catch (err) {
+console.error(err);
+res.status(500).json({ error: "Validation failed" });
+}
 };
 
 /*
-================================================
+
 DECISION
-================================================
+
 */
 
 export const decisionHandler = async (req, res) => {
-  const { id } = req.params;
-  const { type } = req.body;
+try {
+const { id } = req.params;
+const { type } = req.body;
 
-  const encounters = read();
-  const e = encounters.find(x => x.id === id);
+const record = await getEncounterDB(id);
+if (!record) return res.status(404).json({ error: "Not found" });
 
-  const check = enforceTransition(e.status, actionMap.decision);
-  if (!check.allowed) return res.status(400).json(check);
+let data = record.encounter_data;
 
-  e.decision = type;
-  e.status = actionMap.decision;
+const check = enforceTransition(record.status, actionMap.decision);
+if (!check.allowed) return res.status(400).json(check);
 
-  e.timeline.push({
-    event: `Decision made: ${type}`,
-    timestamp: new Date().toISOString()
-  });
+data.decision = type;
+record.status = actionMap.decision;
 
-  const updated = await processCaseState(e);
+data.timeline.push({
+  event: `Decision made: ${type}`,
+  timestamp: new Date().toISOString()
+});
 
-  write(encounters);
-  res.json(updated);
+const updatedData = await processCaseState(data);
+
+const updated = await updateEncounterDB(
+  id,
+  updatedData,
+  actionMap.decision
+);
+
+res.json(updated);
+
+} catch (err) {
+console.error(err);
+res.status(500).json({ error: "Decision failed" });
+}
 };
 
 /*
-================================================
+
 TIMELINE
-================================================
+
 */
 
-export const getEncounterTimelineHandler = (req, res) => {
-  const encounters = read();
-  const e = encounters.find(x => x.id === req.params.id);
+export const getEncounterTimelineHandler = async (req, res) => {
+try {
+const record = await getEncounterDB(req.params.id);
 
-  if (!e) return res.status(404).json({ error: "Not found" });
+if (!record) return res.status(404).json({ error: "Not found" });
 
-  res.json({
-    encounterId: e.id,
-    state: e.status,
-    timeline: e.timeline || []
-  });
+const data = record.encounter_data;
+
+res.json({
+  encounterId: record.id,
+  state: record.status,
+  timeline: data.timeline || []
+});
+
+} catch (err) {
+console.error(err);
+res.status(500).json({ error: "Timeline fetch failed" });
+}
 };
