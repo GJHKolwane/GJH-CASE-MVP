@@ -8,33 +8,55 @@ import {
   nurseAssessmentHandler,
   validateEncounterHandler,
   decisionHandler,
+  getEncounterHandler,
   getEncounterTimelineHandler
 } from "../controllers/encounterController.js";
 
 const router = express.Router();
 
 /*
-ENTRY
+================================================
+ENCOUNTER ENTRY
+================================================
 */
+
+// Create encounter
 router.post("/", createEncounterHandler);
 
 /*
-FLOW
+================================================
+GET
+================================================
 */
-router.post("/:id/intake", intakeHandler);
-router.post("/:id/vitals", addVitalsHandler);
-router.post("/:id/symptoms", addSymptomsHandler);
-router.post("/:id/nurse", nurseAssessmentHandler);
 
-// 🔥 NEW STEP
-router.post("/:id/validate", validateEncounterHandler);
+// Get full encounter
+router.get("/:id", getEncounterHandler);
 
-// ✅ AFTER VALIDATION
-router.post("/:id/decision", decisionHandler);
+// Timeline
+router.get("/:id/timeline", getEncounterTimelineHandler);
 
 /*
-TIMELINE
+================================================
+CLINICAL WORKFLOW (STRICT FSM ORDER)
+================================================
 */
-router.get("/:id/timeline", getEncounterTimelineHandler);
+
+// 1️⃣ Intake
+router.post("/:id/intake", intakeHandler);
+
+// 2️⃣ Vitals
+router.post("/:id/vitals", addVitalsHandler);
+
+// 3️⃣ Symptoms
+router.post("/:id/symptoms", addSymptomsHandler);
+
+// 4️⃣ Nurse
+router.post("/:id/nurse", nurseAssessmentHandler);
+
+// 5️⃣ 🔥 VALIDATION (MANDATORY BEFORE DECISION)
+router.post("/:id/validate", validateEncounterHandler);
+
+// 6️⃣ Decision
+router.post("/:id/decision", decisionHandler);
 
 export default router;
