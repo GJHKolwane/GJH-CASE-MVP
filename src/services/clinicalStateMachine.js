@@ -2,7 +2,7 @@ import axios from "axios";
 
 /*
 ================================================
-GJHEALTH STATE MACHINE (STRICT CLINICAL FLOW)
+GJHEALTH STATE MACHINE (SAFE + HUMAN-IN-LOOP)
 ================================================
 */
 
@@ -19,11 +19,10 @@ const transitions = {
 
   ai_triage_completed: ["soan_generated"],
 
-  soan_generated: [
-    "prescription_issued",
-    "decision_pending",
-    "doctor_escalation"
-  ],
+  // 🔥 NEW CRITICAL STEP
+  soan_generated: ["awaiting_clinician_validation"],
+
+  awaiting_clinician_validation: ["decision_pending"],
 
   decision_pending: [
     "treatment_applied",
@@ -71,6 +70,10 @@ export const actionMap = {
   nurse: "nurse_assessment_completed",
   triage: "ai_triage_completed",
   soan: "soan_generated",
+
+  // 🔥 NEW
+  validate: "awaiting_clinician_validation",
+
   decision: "decision_pending",
   treat: "treatment_applied",
   followup: "followup_scheduled",
@@ -133,7 +136,6 @@ MAIN ENGINE
 */
 
 export async function processCaseState(encounter) {
-
   let updated = { ...encounter };
 
   if (!updated.status) {
@@ -163,7 +165,7 @@ export async function processCaseState(encounter) {
   }
 
   /*
-  AUTO SOAN (SIMPLIFIED)
+  AUTO SOAN
   */
 
   if (updated.triage && updated.status === "ai_triage_completed") {
@@ -171,11 +173,11 @@ export async function processCaseState(encounter) {
       subjective: updated.symptoms,
       objective: updated.vitals,
       assessment: updated.triage,
-      plan: "Pending decision"
+      plan: "Awaiting clinician validation"
     };
 
     updated.status = actionMap.soan;
   }
 
   return updated;
-}
+    }
