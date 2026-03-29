@@ -1,56 +1,40 @@
 import express from "express";
 
 import {
-  createEncounterHandler,
-  intakeHandler,
-  addVitalsHandler,
-  addSymptomsHandler,
-  nurseAssessmentHandler,
-  validateEncounterHandler,
-  decisionHandler,
   doctorConsultationHandler,
   doctorNotesHandler,
   doctorDecisionHandler,
-  getEncounterHandler,
-  getEncounterTimelineHandler
-} from "../controllers/encounterController.js";
+  finalNotesHandler
+} from "../controllers/doctorController.js";
 
 const router = express.Router();
 
 /*
 ================================================
-ENTRY
+DOCTOR CONSULTATION
 ================================================
 */
-router.post("/", createEncounterHandler);
+router.post("/:id/consultation", doctorConsultationHandler);
 
 /*
 ================================================
-GET
+DOCTOR NOTES
 ================================================
 */
-router.get("/:id", getEncounterHandler);
-router.get("/:id/timeline", getEncounterTimelineHandler);
+router.post("/:id/notes", doctorNotesHandler);
 
 /*
 ================================================
-WORKFLOW
+DOCTOR DECISION
 ================================================
 */
-router.post("/:id/intake", intakeHandler);
-router.post("/:id/vitals", addVitalsHandler);
-router.post("/:id/symptoms", addSymptomsHandler);
-router.post("/:id/nurse", nurseAssessmentHandler);
-router.post("/:id/validate", validateEncounterHandler);
-router.post("/:id/decision", decisionHandler);
+router.post("/:id/decision", doctorDecisionHandler);
 
 /*
 ================================================
-DOCTOR
+FINAL NOTES
 ================================================
 */
-router.post("/:id/doctor", doctorConsultationHandler);
-router.post("/:id/doctor_notes", doctorNotesHandler);
-router.post("/:id/doctor_decision", doctorDecisionHandler);
+router.post("/:id/final", finalNotesHandler);
 
 export default router;
