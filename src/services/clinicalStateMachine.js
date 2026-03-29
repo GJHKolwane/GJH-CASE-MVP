@@ -16,24 +16,34 @@ const transitions = {
 
   symptoms_recorded: ["nurse_assessment_completed"],
 
-  // 🔥 AUTO FLOW (NO MANUAL BREAK)
+  // 🔥 AUTO FLOW
   nurse_assessment_completed: ["awaiting_clinician_validation"],
 
+  /*
+  ========================================================
+  🔥 CLINICIAN DECISION POINT (DIRECT BRANCHING)
+  ========================================================
+  */
   awaiting_clinician_validation: [
-    "decision_pending",
-    "doctor_escalation"
-  ],
-
-  decision_pending: [
     "treatment_applied",
+    "followup_scheduled",
     "doctor_escalation"
   ],
 
-  treatment_applied: ["followup_scheduled"],
+  /*
+  ========================================================
+  🩺 TREATMENT FLOW
+  ========================================================
+  */
+  treatment_applied: ["followup_scheduled", "completed"],
 
   followup_scheduled: ["completed"],
 
-  // 🔥 DOCTOR ENGINE
+  /*
+  ========================================================
+  👨‍⚕️ DOCTOR ENGINE
+  ========================================================
+  */
   doctor_escalation: ["doctor_consultation"],
 
   doctor_consultation: ["doctor_notes_added"],
@@ -48,7 +58,11 @@ const transitions = {
     "admitted"
   ],
 
-  // 🔬 LAB EXTENSION (ALREADY GOOD)
+  /*
+  ========================================================
+  🔬 LAB FLOW
+  ========================================================
+  */
   lab_ordered: ["lab_result_received"],
 
   lab_result_received: ["doctor_reassessment"],
@@ -74,27 +88,43 @@ export const actionMap = {
   symptoms: "symptoms_recorded",
   nurse: "nurse_assessment_completed",
 
-  // 🔥 HUMAN ENTRY POINT
+  // 🔥 HUMAN VALIDATION
   validate: "awaiting_clinician_validation",
 
-  decision: "decision_pending",
+  /*
+  ========================================================
+  🔥 DECISION ACTIONS (DIRECT)
+  ========================================================
+  */
   treat: "treatment_applied",
   followup: "followup_scheduled",
   escalate: "doctor_escalation",
 
-  // 🔥 DOCTOR ENGINE
+  /*
+  ========================================================
+  👨‍⚕️ DOCTOR ENGINE
+  ========================================================
+  */
   doctor: "doctor_consultation",
   doctor_notes: "doctor_notes_added",
   doctor_decision: "doctor_decision",
 
-  // 🔁 OUTCOMES
+  /*
+  ========================================================
+  🔁 OUTCOMES
+  ========================================================
+  */
   prescription: "prescription_issued",
   lab_order: "lab_ordered",
   treatment: "treatment_applied",
   discharge: "discharged",
   admit: "admitted",
 
-  // 🔬 LAB FLOW
+  /*
+  ========================================================
+  🔬 LAB FLOW
+  ========================================================
+  */
   lab_result: "lab_result_received",
   reassess: "doctor_reassessment",
   final: "final_notes_completed"
@@ -249,7 +279,7 @@ export async function processCaseState(encounter, action, payload = {}) {
     symptoms: "Symptoms recorded",
     nurse: "Nurse assessment completed",
     validate: "Clinician validation completed",
-    decision: "Decision pending",
+
     treat: "Treatment applied",
     followup: "Follow-up scheduled",
     escalate: "Case escalated to doctor",
@@ -281,4 +311,4 @@ export async function processCaseState(encounter, action, payload = {}) {
   updated.status = nextState;
 
   return updated;
-}
+                                       }
