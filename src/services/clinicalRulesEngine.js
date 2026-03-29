@@ -1,6 +1,18 @@
 /*
 ================================================
-CLINICAL RULES ENGINE
+CLINICAL SAFETY ENGINE (PRODUCTION MVP)
+================================================
+
+PURPOSE:
+- Analyze vitals + symptoms
+- Detect life-threatening conditions
+- Assign severity
+- Trigger auto escalation when needed
+
+DESIGN:
+- Pure function (NO DB calls)
+- Deterministic + explainable
+- Extensible for future AI layer
 ================================================
 */
 
@@ -8,58 +20,89 @@ export function evaluateClinicalState(data) {
   const vitals = data.vitals || {};
   const symptoms = data.symptoms?.symptoms || [];
 
-  let severity = "low";
-  let autoDecision = null;
-
   const bp = vitals.bp || "";
   const temp = vitals.temp || 0;
 
+  let severity = "low";
+  let autoDecision = null;
+  let triggers = [];
+
+  // Normalize symptoms
+  const normalizedSymptoms = symptoms.map(s => s.toLowerCase());
+
+  const has = (symptom) => normalizedSymptoms.includes(symptom);
+
   /*
   ================================================
-  RULE 1: CRITICAL VITALS
+  CARDIAC EMERGENCY (Heart Attack)
   ================================================
   */
-
-  if (bp === "180/120" || temp >= 39) {
-    severity = "high";
+  if (has("chest pain") && has("shortness of breath")) {
+    severity = "critical";
+    triggers.push("cardiac_emergency");
   }
 
   /*
   ================================================
-  RULE 2: DANGEROUS SYMPTOMS
+  SEPSIS (MVP RULE)
   ================================================
   */
-
-  const criticalSymptoms = [
-    "chest pain",
-    "shortness of breath",
-    "unconscious",
-    "seizure"
-  ];
-
-  const hasCriticalSymptom = symptoms.some((s) =>
-    criticalSymptoms.includes(s.toLowerCase())
-  );
-
-  if (hasCriticalSymptom) {
-    severity = "high";
+  if (temp >= 39) {
+    if (severity !== "critical") severity = "high";
+    triggers.push("possible_sepsis");
   }
 
   /*
   ================================================
-  RULE 3: AUTO ESCALATION
+  NEURO EMERGENCY
   ================================================
   */
+  if (has("unconscious") || has("seizure")) {
+    severity = "critical";
+    triggers.push("neuro_emergency");
+  }
 
-  if (severity === "high") {
+  /*
+  ================================================
+  RESPIRATORY DISTRESS
+  ================================================
+  */
+  if (has("shortness of breath")) {
+    if (severity !== "critical") severity = "high";
+    triggers.push("respiratory_distress");
+  }
+
+  /*
+  ================================================
+  HYPERTENSIVE CRISIS
+  ================================================
+  */
+  if (bp === "180/120") {
+    if (severity !== "critical") severity = "high";
+    triggers.push("hypertensive_crisis");
+  }
+
+  /*
+  ================================================
+  SAFETY ESCALATION DECISION
+  ================================================
+  */
+  if (severity === "high" || severity === "critical") {
     autoDecision = {
       type: "doctor_escalation",
-      reason: "Clinical risk detected"
+      reason: triggers,
+      priority: severity
     };
   }
 
+  /*
+  ================================================
+  FINAL OUTPUT
+  ================================================
+  */
   return {
     severity,
-    autoDecision
+    autoDecision,
+    triggers
   };
 }
