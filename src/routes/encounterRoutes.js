@@ -1,82 +1,348 @@
-import express from "express";
+import crypto from "crypto";
 
 import {
-  createEncounterHandler,
-  intakeHandler,
-  addVitalsHandler,
-  addSymptomsHandler,
-  nurseAssessmentHandler,
-  validateEncounterHandler,
-  decisionHandler,
-  doctorConsultationHandler,
-  doctorNotesHandler,
-  doctorDecisionHandler,
-  getEncounterHandler,
-  getEncounterTimelineHandler
-} from "../controllers/encounterController.js";
+  createEncounterDB,
+  getEncounterDB,
+  updateEncounterDB
+} from "../services/dbService.js";
 
-console.log("✅ encounterRoutes loaded");
-
-const router = express.Router();
+import {
+  processCaseState
+} from "../services/clinicalStateMachine.js";
 
 /*
 ================================================
-ENCOUNTER ENTRY
+CREATE
 ================================================
 */
+export const createEncounterHandler = async (req, res) => {
+  try {
+    const { national_id } = req.body || {};
 
-// Create encounter
-router.post("/", createEncounterHandler);
+    const patientId = crypto.randomUUID();
+
+    const encounter = await createEncounterDB(
+      patientId,
+      national_id || null
+    );
+
+    res.json(encounter);
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to create encounter" });
+  }
+};
 
 /*
 ================================================
-GET
+INTAKE
 ================================================
 */
+export const intakeHandler = async (req, res) => {
+  try {
+    const record = await getEncounterDB(req.params.id);
+    if (!record) return res.status(404).json({ error: "Not found" });
 
-// Get full encounter
-router.get("/:id", getEncounterHandler);
+    const updatedData = await processCaseState(
+      record.encounter_data,
+      "intake",
+      { intake: req.body }
+    );
 
-// Timeline
-router.get("/:id/timeline", getEncounterTimelineHandler);
+    const updated = await updateEncounterDB(
+      req.params.id,
+      updatedData,
+      updatedData.status
+    );
+
+    res.json(updated);
+
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
 
 /*
 ================================================
-CLINICAL WORKFLOW (STRICT FSM ORDER)
+VITALS
 ================================================
 */
+export const addVitalsHandler = async (req, res) => {
+  try {
+    const record = await getEncounterDB(req.params.id);
+    if (!record) return res.status(404).json({ error: "Not found" });
 
-// 1️⃣ Intake
-router.post("/:id/intake", intakeHandler);
+    const updatedData = await processCaseState(
+      record.encounter_data,
+      "vitals",
+      { vitals: req.body }
+    );
 
-// 2️⃣ Vitals
-router.post("/:id/vitals", addVitalsHandler);
+    const updated = await updateEncounterDB(
+      req.params.id,
+      updatedData,
+      updatedData.status
+    );
 
-// 3️⃣ Symptoms
-router.post("/:id/symptoms", addSymptomsHandler);
+    res.json(updated);
 
-// 4️⃣ Nurse
-router.post("/:id/nurse", nurseAssessmentHandler);
-
-// 5️⃣ 🔥 VALIDATION (MANDATORY BEFORE DECISION)
-router.post("/:id/validate", validateEncounterHandler);
-
-// 6️⃣ Decision (may escalate to doctor)
-router.post("/:id/decision", decisionHandler);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
 
 /*
 ================================================
-👨‍⚕️ DOCTOR ENGINE (POST-ESCALATION)
+SYMPTOMS
 ================================================
 */
+export const addSymptomsHandler = async (req, res) => {
+  try {
+    const record = await getEncounterDB(req.params.id);
+    if (!record) return res.status(404).json({ error: "Not found" });
 
-// Doctor takes over case
-router.post("/:id/doctor", doctorConsultationHandler);
+    const updatedData = await processCaseState(
+      record.encounter_data,
+      "symptoms",
+      { symptoms: req.body }
+    );
 
-// Doctor adds notes
-router.post("/:id/doctor_notes", doctorNotesHandler);
+    const updated = await updateEncounterDB(
+      req.params.id,
+      updatedData,
+      updatedData.status
+    );
 
-// Doctor makes final decision
-router.post("/:id/doctor_decision", doctorDecisionHandler);
+    res.json(updated);
 
-export default router;
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+/*
+================================================
+NURSE
+================================================
+*/
+export const nurseAssessmentHandler = async (req, res) => {
+  try {
+    const record = await getEncounterDB(req.params.id);
+    if (!record) return res.status(404).json({ error: "Not found" });
+
+    const updatedData = await processCaseState(
+      record.encounter_data,
+      "nurse",
+      { nurseNotes: req.body }
+    );
+
+    const updated = await updateEncounterDB(
+      req.params.id,
+      updatedData,
+      updatedData.status
+    );
+
+    res.json(updated);
+
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+/*
+================================================
+VALIDATION → NOW MOVES STATE
+================================================
+*/
+export const validateEncounterHandler = async (req, res) => {
+  try {
+    const record = await getEncounterDB(req.params.id);
+    if (!record) return res.status(404).json({ error: "Not found" });
+
+    const updatedData = await processCaseState(
+      record.encounter_data,
+      "validate",
+      {
+        validation: {
+          clinician: req.body.clinician,
+          notes: req.body.notes,
+          timestamp: new Date().toISOString()
+        }
+      }
+    );
+
+    const updated = await updateEncounterDB(
+      req.params.id,
+      updatedData,
+      updatedData.status
+    );
+
+    res.json(updated);
+
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+/*
+================================================
+🔥 DECISION (INTELLIGENT BRANCHING)
+================================================
+*/
+export const decisionHandler = async (req, res) => {
+  try {
+    const { type } = req.body;
+
+    const record = await getEncounterDB(req.params.id);
+    if (!record) return res.status(404).json({ error: "Not found" });
+
+    let action;
+
+    if (type === "doctor_escalation") {
+      action = "escalate";
+    } else if (type === "followup") {
+      action = "followup";
+    } else {
+      action = "treat"; // default = continue
+    }
+
+    const updatedData = await processCaseState(
+      record.encounter_data,
+      action,
+      {
+        decision: {
+          type,
+          timestamp: new Date().toISOString()
+        }
+      }
+    );
+
+    const updated = await updateEncounterDB(
+      req.params.id,
+      updatedData,
+      updatedData.status
+    );
+
+    res.json(updated);
+
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+/*
+================================================
+DOCTOR
+================================================
+*/
+export const doctorConsultationHandler = async (req, res) => {
+  try {
+    const record = await getEncounterDB(req.params.id);
+    if (!record) return res.status(404).json({ error: "Not found" });
+
+    const updatedData = await processCaseState(
+      record.encounter_data,
+      "doctor",
+      {
+        doctor: {
+          clinician: req.body.clinician,
+          startedAt: new Date().toISOString()
+        }
+      }
+    );
+
+    const updated = await updateEncounterDB(
+      req.params.id,
+      updatedData,
+      updatedData.status
+    );
+
+    res.json(updated);
+
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+export const doctorNotesHandler = async (req, res) => {
+  try {
+    const record = await getEncounterDB(req.params.id);
+    if (!record) return res.status(404).json({ error: "Not found" });
+
+    const updatedData = await processCaseState(
+      record.encounter_data,
+      "doctor_notes",
+      {
+        doctorNotes: {
+          notes: req.body.notes,
+          diagnosis: req.body.diagnosis,
+          timestamp: new Date().toISOString()
+        }
+      }
+    );
+
+    const updated = await updateEncounterDB(
+      req.params.id,
+      updatedData,
+      updatedData.status
+    );
+
+    res.json(updated);
+
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+export const doctorDecisionHandler = async (req, res) => {
+  try {
+    const record = await getEncounterDB(req.params.id);
+    if (!record) return res.status(404).json({ error: "Not found" });
+
+    const updatedData = await processCaseState(
+      record.encounter_data,
+      "doctor_decision",
+      {
+        doctorDecision: {
+          type: req.body.type,
+          reason: req.body.reason,
+          timestamp: new Date().toISOString()
+        }
+      }
+    );
+
+    const updated = await updateEncounterDB(
+      req.params.id,
+      updatedData,
+      updatedData.status
+    );
+
+    res.json(updated);
+
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+/*
+================================================
+GET + TIMELINE
+================================================
+*/
+export const getEncounterHandler = async (req, res) => {
+  const record = await getEncounterDB(req.params.id);
+  if (!record) return res.status(404).json({ error: "Not found" });
+  res.json(record);
+};
+
+export const getEncounterTimelineHandler = async (req, res) => {
+  const record = await getEncounterDB(req.params.id);
+  if (!record) return res.status(404).json({ error: "Not found" });
+
+  res.json({
+    encounterId: record.id,
+    state: record.status,
+    timeline: record.encounter_data.timeline || []
+  });
+};
