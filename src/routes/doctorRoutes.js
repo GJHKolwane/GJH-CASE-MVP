@@ -1,105 +1,56 @@
-import fs from "fs";
-import path from "path";
-import crypto from "crypto";
 import express from "express";
-const router = express.Router();
+
 import {
-  processCaseState,
-  enforceTransition,
-  actionMap
-} from "../services/clinicalStateMachine.js";
+  createEncounterHandler,
+  intakeHandler,
+  addVitalsHandler,
+  addSymptomsHandler,
+  nurseAssessmentHandler,
+  validateEncounterHandler,
+  decisionHandler,
+  doctorConsultationHandler,
+  doctorNotesHandler,
+  doctorDecisionHandler,
+  getEncounterHandler,
+  getEncounterTimelineHandler
+} from "../controllers/encounterController.js";
 
-const file = path.resolve("data/encounters.json");
-
-const read = () => fs.existsSync(file)
-  ? JSON.parse(fs.readFileSync(file))
-  : [];
-
-const write = (d) =>
-  fs.writeFileSync(file, JSON.stringify(d, null, 2));
-
-/*
-================================================
-LAB ORDER
-================================================
-*/
-
-export const orderLabHandler = async (req, res) => {
-  const { id } = req.params;
-  const { test, doctorId } = req.body;
-
-  const encounters = read();
-  const e = encounters.find(x => x.id === id);
-
-  const next = actionMap.lab_order;
-  const check = enforceTransition(e.status, next);
-
-  if (!check.allowed) return res.status(400).json(check);
-
-  e.labs = e.labs || { orders: [], results: [] };
-
-  const order = {
-    id: crypto.randomUUID(),
-    test,
-    doctorId,
-    createdAt: new Date().toISOString()
-  };
-
-  e.labs.orders.push(order);
-  e.status = next;
-
-  e.timeline.push({
-    event: "Lab ordered",
-    data: order,
-    timestamp: new Date().toISOString()
-  });
-
-  const updated = await processCaseState(e);
-
-  write(encounters);
-  res.json(updated);
-};
+const router = express.Router();
 
 /*
 ================================================
-LAB RESULT
+ENTRY
 ================================================
 */
+router.post("/", createEncounterHandler);
 
-export const recordLabResultHandler = async (req, res) => {
-  const { id } = req.params;
-  const { result, labTechId } = req.body;
+/*
+================================================
+GET
+================================================
+*/
+router.get("/:id", getEncounterHandler);
+router.get("/:id/timeline", getEncounterTimelineHandler);
 
-  const encounters = read();
-  const e = encounters.find(x => x.id === id);
+/*
+================================================
+WORKFLOW
+================================================
+*/
+router.post("/:id/intake", intakeHandler);
+router.post("/:id/vitals", addVitalsHandler);
+router.post("/:id/symptoms", addSymptomsHandler);
+router.post("/:id/nurse", nurseAssessmentHandler);
+router.post("/:id/validate", validateEncounterHandler);
+router.post("/:id/decision", decisionHandler);
 
-  const next = actionMap.lab_result;
-  const check = enforceTransition(e.status, next);
-
-  if (!check.allowed) return res.status(400).json(check);
-
-  e.labs = e.labs || { orders: [], results: [] };
-
-  const labResult = {
-    id: crypto.randomUUID(),
-    result,
-    labTechId,
-    createdAt: new Date().toISOString()
-  };
-
-  e.labs.results.push(labResult);
-  e.status = next;
-
-  e.timeline.push({
-    event: "Lab result recorded",
-    data: labResult,
-    timestamp: new Date().toISOString()
-  });
-
-  const updated = await processCaseState(e);
-
-  write(encounters);
-  res.json(updated);
-};
+/*
+================================================
+DOCTOR
+================================================
+*/
+router.post("/:id/doctor", doctorConsultationHandler);
+router.post("/:id/doctor_notes", doctorNotesHandler);
+router.post("/:id/doctor_decision", doctorDecisionHandler);
 
 export default router;
