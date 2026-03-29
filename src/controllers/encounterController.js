@@ -49,9 +49,7 @@ export const intakeHandler = async (req, res) => {
     const updatedData = await processCaseState(
       record.encounter_data,
       "intake",
-      {
-        intake: req.body
-      }
+      { intake: req.body }
     );
 
     const updated = await updateEncounterDB(
@@ -83,9 +81,7 @@ export const addVitalsHandler = async (req, res) => {
     const updatedData = await processCaseState(
       record.encounter_data,
       "vitals",
-      {
-        vitals: req.body
-      }
+      { vitals: req.body }
     );
 
     const updated = await updateEncounterDB(
@@ -117,9 +113,7 @@ export const addSymptomsHandler = async (req, res) => {
     const updatedData = await processCaseState(
       record.encounter_data,
       "symptoms",
-      {
-        symptoms: req.body
-      }
+      { symptoms: req.body }
     );
 
     const updated = await updateEncounterDB(
@@ -151,8 +145,44 @@ export const nurseAssessmentHandler = async (req, res) => {
     const updatedData = await processCaseState(
       record.encounter_data,
       "nurse",
+      { nurseNotes: req.body }
+    );
+
+    const updated = await updateEncounterDB(
+      id,
+      updatedData,
+      updatedData.status
+    );
+
+    res.json(updated);
+
+  } catch (err) {
+    console.error(err);
+    res.status(400).json({ error: err.message });
+  }
+};
+
+/*
+================================================
+VALIDATION (MOVES STATE)
+================================================
+*/
+export const validateEncounterHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const record = await getEncounterDB(id);
+    if (!record) return res.status(404).json({ error: "Not found" });
+
+    const updatedData = await processCaseState(
+      record.encounter_data,
+      "validate",
       {
-        nurseNotes: req.body
+        validation: {
+          clinician: req.body.clinician,
+          notes: req.body.notes,
+          timestamp: new Date().toISOString()
+        }
       }
     );
 
@@ -172,44 +202,7 @@ export const nurseAssessmentHandler = async (req, res) => {
 
 /*
 ================================================
-VALIDATION (NO STATE CHANGE)
-================================================
-*/
-export const validateEncounterHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const record = await getEncounterDB(id);
-    if (!record) return res.status(404).json({ error: "Not found" });
-
-    let data = record.encounter_data;
-
-    data = {
-      ...data,
-      validation: {
-        clinician: req.body.clinician,
-        notes: req.body.notes,
-        timestamp: new Date().toISOString()
-      }
-    };
-
-    const updated = await updateEncounterDB(
-      id,
-      data,
-      record.status // ❌ NO STATE CHANGE
-    );
-
-    res.json(updated);
-
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Validation failed" });
-  }
-};
-
-/*
-================================================
-DECISION (PRE-DOCTOR OR ESCALATION)
+DECISION (DIRECT BRANCHING)
 ================================================
 */
 export const decisionHandler = async (req, res) => {
@@ -220,11 +213,24 @@ export const decisionHandler = async (req, res) => {
     const record = await getEncounterDB(id);
     if (!record) return res.status(404).json({ error: "Not found" });
 
+    let action;
+
+    if (type === "doctor_escalation") {
+      action = "escalate";
+    } else if (type === "followup") {
+      action = "followup";
+    } else {
+      action = "treat";
+    }
+
     const updatedData = await processCaseState(
       record.encounter_data,
-      "decision",
+      action,
       {
-        decision: type
+        decision: {
+          type,
+          timestamp: new Date().toISOString()
+        }
       }
     );
 
