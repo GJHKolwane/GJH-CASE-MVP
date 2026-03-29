@@ -10,6 +10,10 @@ import {
 processCaseState
 } from "../services/clinicalStateMachine.js";
 
+import {
+evaluateClinicalState
+} from "../services/clinicalRulesEngine.js";
+
 /*
 
 CREATE (SYSTEM OWNS patient_id)
@@ -68,7 +72,7 @@ res.status(400).json({ error: err.message });
 
 /*
 
-VITALS
+VITALS + CLINICAL SAFETY
 
 */
 export const addVitalsHandler = async (req, res) => {
@@ -78,11 +82,37 @@ const { id } = req.params;
 const record = await getEncounterDB(id);
 if (!record) return res.status(404).json({ error: "Not found" });
 
-const updatedData = await processCaseState(
+let updatedData = await processCaseState(
   record.encounter_data,
   "vitals",
   { vitals: req.body }
 );
+
+// ================================
+// CLINICAL SAFETY ENGINE
+// ================================
+const { severity, autoDecision, triggers } = evaluateClinicalState(updatedData);
+
+updatedData.triage = {
+  ...(updatedData.triage || {}),
+  severity
+};
+
+// AUTO ESCALATION
+if (autoDecision) {
+  updatedData.decision = {
+    type: autoDecision.type,
+    timestamp: new Date().toISOString()
+  };
+
+  updatedData.timeline.push({
+    event: "🚨 Auto escalation triggered (vitals)",
+    reason: triggers,
+    timestamp: new Date().toISOString()
+  });
+
+  updatedData.status = "doctor_escalation";
+}
 
 const updated = await updateEncounterDB(
   id,
@@ -100,7 +130,7 @@ res.status(400).json({ error: err.message });
 
 /*
 
-SYMPTOMS
+SYMPTOMS + CLINICAL SAFETY
 
 */
 export const addSymptomsHandler = async (req, res) => {
@@ -110,11 +140,37 @@ const { id } = req.params;
 const record = await getEncounterDB(id);
 if (!record) return res.status(404).json({ error: "Not found" });
 
-const updatedData = await processCaseState(
+let updatedData = await processCaseState(
   record.encounter_data,
   "symptoms",
   { symptoms: req.body }
 );
+
+// ================================
+// CLINICAL SAFETY ENGINE
+// ================================
+const { severity, autoDecision, triggers } = evaluateClinicalState(updatedData);
+
+updatedData.triage = {
+  ...(updatedData.triage || {}),
+  severity
+};
+
+// AUTO ESCALATION
+if (autoDecision) {
+  updatedData.decision = {
+    type: autoDecision.type,
+    timestamp: new Date().toISOString()
+  };
+
+  updatedData.timeline.push({
+    event: "🚨 Auto escalation triggered (symptoms)",
+    reason: triggers,
+    timestamp: new Date().toISOString()
+  });
+
+  updatedData.status = "doctor_escalation";
+}
 
 const updated = await updateEncounterDB(
   id,
@@ -164,7 +220,7 @@ res.status(400).json({ error: err.message });
 
 /*
 
-VALIDATION (MOVES STATE)
+VALIDATION
 
 */
 export const validateEncounterHandler = async (req, res) => {
@@ -202,7 +258,7 @@ res.status(400).json({ error: err.message });
 
 /*
 
-DECISION (DIRECT BRANCHING + FOLLOW-UP ENFORCEMENT)
+DECISION (ENFORCED)
 
 */
 export const decisionHandler = async (req, res) => {
@@ -213,12 +269,10 @@ const { type, followUp } = req.body;
 const record = await getEncounterDB(id);
 if (!record) return res.status(404).json({ error: "Not found" });
 
-// ✅ enforce decision presence
 if (!type) {
   return res.status(400).json({ error: "Decision type is required" });
 }
 
-// ✅ enforce follow-up when treatment applied
 if (type === "treatment_applied") {
   if (!followUp || !followUp.required) {
     return res.status(400).json({
@@ -227,7 +281,6 @@ if (type === "treatment_applied") {
   }
 }
 
-// ✅ map decision → FSM action
 let action;
 
 if (type === "doctor_escalation") {
@@ -272,7 +325,7 @@ res.status(400).json({ error: err.message });
 
 /*
 
-DOCTOR — CONSULTATION START
+DOCTOR FLOW
 
 */
 export const doctorConsultationHandler = async (req, res) => {
@@ -308,11 +361,6 @@ res.status(400).json({ error: err.message });
 }
 };
 
-/*
-
-DOCTOR NOTES
-
-*/
 export const doctorNotesHandler = async (req, res) => {
 try {
 const { id } = req.params;
@@ -347,11 +395,6 @@ res.status(400).json({ error: err.message });
 }
 };
 
-/*
-
-DOCTOR DECISION (FINAL AUTHORITY)
-
-*/
 export const doctorDecisionHandler = async (req, res) => {
 try {
 const { id } = req.params;
