@@ -1,5 +1,6 @@
 import axios from "axios";
 import { evaluateTriage } from "./triageEngine.js";
+
 /*
 ================================================
 GJHEALTH STATE MACHINE (STRICT CLINICAL FLOW)
@@ -32,6 +33,7 @@ const transitions = {
 
   followup_scheduled: ["completed"],
 
+  // 🔥 DOCTOR ENGINE
   doctor_escalation: ["doctor_consultation"],
 
   doctor_consultation: ["doctor_notes_added"],
@@ -40,9 +42,13 @@ const transitions = {
 
   doctor_decision: [
     "prescription_issued",
-    "lab_ordered"
+    "lab_ordered",
+    "treatment_applied",
+    "discharged",
+    "admitted"
   ],
 
+  // 🔬 LAB EXTENSION (ALREADY GOOD)
   lab_ordered: ["lab_result_received"],
 
   lab_result_received: ["doctor_reassessment"],
@@ -75,10 +81,20 @@ export const actionMap = {
   treat: "treatment_applied",
   followup: "followup_scheduled",
   escalate: "doctor_escalation",
+
+  // 🔥 DOCTOR ENGINE
+  doctor: "doctor_consultation",
   doctor_notes: "doctor_notes_added",
   doctor_decision: "doctor_decision",
+
+  // 🔁 OUTCOMES
   prescription: "prescription_issued",
   lab_order: "lab_ordered",
+  treatment: "treatment_applied",
+  discharge: "discharged",
+  admit: "admitted",
+
+  // 🔬 LAB FLOW
   lab_result: "lab_result_received",
   reassess: "doctor_reassessment",
   final: "final_notes_completed"
@@ -136,44 +152,61 @@ MAIN ENGINE
 ================================================
 */
 
-export async function processCaseState(encounter) {
+export async function processCaseState(encounter, action, payload = {}) {
   let updated = { ...encounter };
 
   if (!updated.status) {
     updated.status = "created";
   }
 
-  // Ensure timeline exists
   if (!updated.timeline) {
     updated.timeline = [];
   }
 
+  const nextState = actionMap[action];
+
+  if (!nextState) {
+    throw new Error(`Unknown action: ${action}`);
+  }
+
   /*
   ========================================================
-  🔥 CORE INTELLIGENCE BLOCK (AUTO AFTER NURSE)
+  🚨 DOCTOR ACCESS CONTROL
+  ========================================================
+  */
+
+  if (action === "doctor" && updated.status !== "doctor_escalation") {
+    throw new Error("Doctor access denied — case not escalated");
+  }
+
+  /*
+  ========================================================
+  🔍 TRANSITION VALIDATION
+  ========================================================
+  */
+
+  const check = enforceTransition(updated.status, nextState);
+
+  if (!check.allowed) {
+    throw new Error(check.error);
+  }
+
+  /*
+  ========================================================
+  🧠 AUTO AI TRIAGE (AFTER NURSE)
   ========================================================
   */
 
   if (updated.status === "nurse_assessment_completed") {
-
     console.log("🧠 AI TRIAGE + SOAN PIPELINE STARTED");
 
-    const check = enforceTransition(
-      updated.status,
-      "awaiting_clinician_validation"
-    );
-
-    if (!check.allowed) return updated;
-
-    // --- AI TRIAGE ---
-    
     const triage = evaluateTriage({
-  vitals: updated.vitals,
-  symptoms: updated.symptoms
-});
+      vitals: updated.vitals,
+      symptoms: updated.symptoms
+    });
+
     updated.triage = triage;
 
-    // --- SOAN GENERATION ---
     updated.soan = {
       subjective: updated.symptoms || {},
       objective: updated.vitals || {},
@@ -181,17 +214,71 @@ export async function processCaseState(encounter) {
       plan: "Doctor review required"
     };
 
-    // --- STATUS MOVE (DIRECT, NO FRAGMENTS) ---
-    updated.status = "awaiting_clinician_validation";
-
-    // --- TIMELINE ---
     updated.timeline.push({
       event: "AI triage + SOAN generated",
       timestamp: new Date().toISOString()
     });
 
+    updated.status = "awaiting_clinician_validation";
+
     console.log("✅ AI COMPLETE → awaiting_clinician_validation");
+
+    return updated;
   }
+
+  /*
+  ========================================================
+  🧾 APPLY PAYLOAD DATA
+  ========================================================
+  */
+
+  updated = {
+    ...updated,
+    ...payload
+  };
+
+  /*
+  ========================================================
+  📊 TIMELINE EVENTS
+  ========================================================
+  */
+
+  const eventMap = {
+    intake: "Patient intake completed",
+    vitals: "Vitals recorded",
+    symptoms: "Symptoms recorded",
+    nurse: "Nurse assessment completed",
+    validate: "Clinician validation completed",
+    decision: "Decision pending",
+    treat: "Treatment applied",
+    followup: "Follow-up scheduled",
+    escalate: "Case escalated to doctor",
+
+    doctor: "Doctor consultation started",
+    doctor_notes: "Doctor notes added",
+    doctor_decision: "Doctor decision made",
+
+    prescription: "Prescription issued",
+    lab_order: "Lab ordered",
+    lab_result: "Lab result received",
+    reassess: "Doctor reassessment",
+    final: "Final notes completed"
+  };
+
+  if (eventMap[action]) {
+    updated.timeline.push({
+      event: eventMap[action],
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  /*
+  ========================================================
+  🔄 STATE TRANSITION
+  ========================================================
+  */
+
+  updated.status = nextState;
 
   return updated;
 }
