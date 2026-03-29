@@ -46,7 +46,7 @@ router.post("/:id/decision", decisionHandler);
 
 /*
 ================================================
-DOCTOR
+DOCTOR ENGINE
 ================================================
 */
 router.post("/:id/doctor", doctorConsultationHandler);
