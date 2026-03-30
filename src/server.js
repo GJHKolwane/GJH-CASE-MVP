@@ -3,12 +3,16 @@ import cors from "cors";
 import aiAssistRoutes from "./routes/aiAssistRoutes.js";
 
 import encounterRoutes from "./routes/encounterRoutes.js";
+import caseRoutes from "./routes/case.routes";
+
+
 console.log("✅ server started, routes importing...");
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
+app.use("/case", caseRoutes);
 
 // ✅ CLEAN PREFIX
 app.use("/encounters", encounterRoutes);
