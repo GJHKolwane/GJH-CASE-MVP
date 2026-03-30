@@ -3,7 +3,7 @@ import cors from "cors";
 import aiAssistRoutes from "./routes/aiAssistRoutes.js";
 
 import encounterRoutes from "./routes/encounterRoutes.js";
-import caseRoutes from "./routes/case.routes";
+import caseRoutes from "./routes/case.routes.js";
 
 
 console.log("✅ server started, routes importing...");
