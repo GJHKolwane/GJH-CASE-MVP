@@ -1,4 +1,4 @@
-import { processCase } from "../services/case.service";
+import { processCase } from "../services/case.service.js";
 
 export async function handleCase(req: any, res: any) {
   try {
