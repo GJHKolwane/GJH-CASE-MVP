@@ -1,4 +1,4 @@
-export function applyDecisionRules(caseData: any, ai: any) {
+export function applyDecisionRules(caseData, ai) {
   if (caseData.vitals?.heartRate > 130) {
     return {
       action: "EMERGENCY_ESCALATION",
