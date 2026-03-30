@@ -1,5 +1,5 @@
 import express from "express";
-import { handleCase } from "../controllers/case.controller";
+import { handleCase } from "../controllers/case.controller.js";
 
 const router = express.Router();
 
