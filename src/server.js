@@ -1,6 +1,5 @@
 import express from "express";
 import cors from "cors";
-import aiAssistRoutes from "./routes/aiAssistRoutes.js";
 
 import encounterRoutes from "./routes/encounterRoutes.js";
 import caseRoutes from "./routes/case.routes.js";
@@ -16,7 +15,7 @@ app.use("/case", caseRoutes);
 
 // ✅ CLEAN PREFIX
 app.use("/encounters", encounterRoutes);
-app.use("/api", aiAssistRoutes);
+
 const PORT = 5050;
 
 app.listen(PORT, () => {
