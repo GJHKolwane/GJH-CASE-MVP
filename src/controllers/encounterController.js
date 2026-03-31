@@ -332,6 +332,116 @@ export const decisionHandler = async (req, res) => {
 
 /*
 ================================================
+DOCTOR FLOW
+================================================
+*/
+
+// 👨‍⚕️ START CONSULTATION
+export const doctorConsultationHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { clinician } = req.body;
+
+    const record = await getEncounterDB(id);
+    if (!record) return res.status(404).json({ error: "Not found" });
+
+    const updatedData = await processCaseState(
+      record.encounter_data,
+      "doctor",
+      {
+        doctor: {
+          clinician,
+          startedAt: new Date().toISOString()
+        }
+      }
+    );
+
+    const updated = await updateEncounterDB(
+      id,
+      updatedData,
+      updatedData.status
+    );
+
+    res.json(updated);
+
+  } catch (err) {
+    console.error(err);
+    res.status(400).json({ error: err.message });
+  }
+};
+
+// 📝 DOCTOR NOTES
+export const doctorNotesHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { notes, diagnosis } = req.body;
+
+    const record = await getEncounterDB(id);
+    if (!record) return res.status(404).json({ error: "Not found" });
+
+    const updatedData = await processCaseState(
+      record.encounter_data,
+      "doctor_notes",
+      {
+        doctorNotes: {
+          notes,
+          diagnosis,
+          timestamp: new Date().toISOString()
+        }
+      }
+    );
+
+    const updated = await updateEncounterDB(
+      id,
+      updatedData,
+      updatedData.status
+    );
+
+    res.json(updated);
+
+  } catch (err) {
+    console.error(err);
+    res.status(400).json({ error: err.message });
+  }
+};
+
+// ✅ FINAL DECISION
+export const doctorDecisionHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { type, reason } = req.body;
+
+    const record = await getEncounterDB(id);
+    if (!record) return res.status(404).json({ error: "Not found" });
+
+    const updatedData = await processCaseState(
+      record.encounter_data,
+      "doctor_decision",
+      {
+        doctorDecision: {
+          type,
+          reason,
+          timestamp: new Date().toISOString()
+        }
+      }
+    );
+
+    const updated = await updateEncounterDB(
+      id,
+      updatedData,
+      updatedData.status
+    );
+
+    res.json(updated);
+
+  } catch (err) {
+    console.error(err);
+    res.status(400).json({ error: err.message });
+  }
+};
+
+/*
+================================================
 GET + TIMELINE
 ================================================
 */
