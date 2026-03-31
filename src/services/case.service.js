@@ -1,4 +1,4 @@
-import { callAIOrchestrator } from "../adapters/aiClient.js";
+import { callAIOrchestrator } from "../adapters/ai.router.js";
 import { evaluateRisk } from "../engine/risk.engine.js";
 import { logDecision } from "./audit.service.js";
 
