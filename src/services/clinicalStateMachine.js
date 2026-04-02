@@ -1,4 +1,5 @@
 import { createEscalation } from "./escalation.service.js";
+import { assignDoctor } from "./doctor.service.js";
 
 export function processCaseState(data = {}, action, payload = {}) {
 
@@ -15,7 +16,7 @@ export function processCaseState(data = {}, action, payload = {}) {
 
   /*
   ========================================
-  🚨 AUTO ESCALATION INJECTION (CORE UPGRADE)
+  🚨 AUTO ESCALATION INJECTION
   ========================================
   */
 
@@ -43,14 +44,40 @@ export function processCaseState(data = {}, action, payload = {}) {
 
   /*
   ========================================
-  🚨 CLINICAL OVERRIDE MODE (UPDATED)
+  👨‍⚕️ DOCTOR AUTO ASSIGNMENT (NEW CORE)
+  ========================================
+  */
+
+  if (escalation.status && !newData.doctor) {
+    const doctor = assignDoctor({
+      escalation,
+      caseId: newData.id || "unknown"
+    });
+
+    if (doctor) {
+      newData.doctor = doctor;
+
+      newData.timeline.push({
+        event: `👨‍⚕️ Doctor assigned (${doctor.name})`,
+        timestamp: now
+      });
+    }
+  }
+
+  /*
+  ========================================
+  🚨 CLINICAL OVERRIDE MODE
   ========================================
   */
 
   const severity = newData.escalation?.level;
 
   // 🔥 AUTO-ROUTING INTO ESCALATION STATE
-  if (newData.escalation?.status && currentState !== "doctor_escalation" && action !== "doctor") {
+  if (
+    newData.escalation?.status &&
+    currentState !== "doctor_escalation" &&
+    action !== "doctor"
+  ) {
     return {
       ...newData,
       status: "doctor_escalation"
