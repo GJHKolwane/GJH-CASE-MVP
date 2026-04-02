@@ -1,5 +1,6 @@
 import { createEscalation } from "./escalation.service.js";
 import { assignDoctor } from "./doctor.service.js";
+import { buildRouting } from "./routing.service.js";
 
 export function processCaseState(data = {}, action, payload = {}) {
 
@@ -17,6 +18,7 @@ export function processCaseState(data = {}, action, payload = {}) {
   /*
   ========================================
   🚨 AUTO ESCALATION INJECTION
+  (idempotent — no duplicate timeline spam)
   ========================================
   */
 
@@ -24,6 +26,8 @@ export function processCaseState(data = {}, action, payload = {}) {
     newData.finalSeverity ||
     newData.triage?.severity ||
     "LOW";
+
+  const prevEscalation = data.escalation || {};
 
   const escalation = createEscalation({
     finalSeverity,
@@ -33,8 +37,11 @@ export function processCaseState(data = {}, action, payload = {}) {
 
   newData.escalation = escalation;
 
-  // 🔥 Timeline logging (only when triggered)
-  if (escalation.status) {
+  // Log ONLY when escalation is newly triggered or level changes
+  if (
+    escalation.status &&
+    (!prevEscalation.status || prevEscalation.level !== escalation.level)
+  ) {
     newData.timeline.push({
       event: `🚨 Auto-escalation triggered (${escalation.level})`,
       reason: escalation.reason,
@@ -44,7 +51,7 @@ export function processCaseState(data = {}, action, payload = {}) {
 
   /*
   ========================================
-  👨‍⚕️ DOCTOR AUTO ASSIGNMENT (NEW CORE)
+  👨‍⚕️ DOCTOR AUTO ASSIGNMENT (idempotent)
   ========================================
   */
 
@@ -66,16 +73,35 @@ export function processCaseState(data = {}, action, payload = {}) {
 
   /*
   ========================================
+  📦 ROUTING ENGINE (idempotent)
+  ========================================
+  */
+
+  const prevQueue = data.routing?.queue;
+  const routing = buildRouting(newData);
+
+  newData.routing = routing;
+
+  if (prevQueue !== routing.queue) {
+    newData.timeline.push({
+      event: `📦 Routed to ${routing.queue}`,
+      timestamp: now
+    });
+  }
+
+  /*
+  ========================================
   🚨 CLINICAL OVERRIDE MODE
   ========================================
   */
 
   const severity = newData.escalation?.level;
 
-  // 🔥 AUTO-ROUTING INTO ESCALATION STATE
+  // 🔥 AUTO-ROUTING INTO ESCALATION STATE (safe)
   if (
     newData.escalation?.status &&
     currentState !== "doctor_escalation" &&
+    currentState !== "doctor_consultation" &&
     action !== "doctor"
   ) {
     return {
@@ -223,4 +249,4 @@ export function processCaseState(data = {}, action, payload = {}) {
 
   // 🔥 FINAL SAFETY
   throw new Error(`Invalid transition: ${currentState} → ${action}`);
-  }
+}
