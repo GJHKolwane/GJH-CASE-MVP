@@ -1,3 +1,5 @@
+import { createEscalation } from "./escalation.service.js";
+
 export function processCaseState(data = {}, action, payload = {}) {
 
   let currentState = data.status || "created";
@@ -13,10 +15,47 @@ export function processCaseState(data = {}, action, payload = {}) {
 
   /*
   ========================================
-  🚨 CLINICAL OVERRIDE MODE (CRITICAL LOGIC)
+  🚨 AUTO ESCALATION INJECTION (CORE UPGRADE)
   ========================================
   */
-  const severity = newData.triage?.severity?.toUpperCase();
+
+  const finalSeverity =
+    newData.finalSeverity ||
+    newData.triage?.severity ||
+    "LOW";
+
+  const escalation = createEscalation({
+    finalSeverity,
+    vitals: newData.vitals,
+    symptoms: newData.symptoms
+  });
+
+  newData.escalation = escalation;
+
+  // 🔥 Timeline logging (only when triggered)
+  if (escalation.status) {
+    newData.timeline.push({
+      event: `🚨 Auto-escalation triggered (${escalation.level})`,
+      reason: escalation.reason,
+      timestamp: now
+    });
+  }
+
+  /*
+  ========================================
+  🚨 CLINICAL OVERRIDE MODE (UPDATED)
+  ========================================
+  */
+
+  const severity = newData.escalation?.level;
+
+  // 🔥 AUTO-ROUTING INTO ESCALATION STATE
+  if (newData.escalation?.status && currentState !== "doctor_escalation" && action !== "doctor") {
+    return {
+      ...newData,
+      status: "doctor_escalation"
+    };
+  }
 
   if (severity === "HIGH" || severity === "CRITICAL") {
 
@@ -49,6 +88,7 @@ export function processCaseState(data = {}, action, payload = {}) {
     if (action === "escalate") {
       newData.timeline.push({
         event: "🚨 Escalated (override mode)",
+        reason: newData.escalation?.reason,
         timestamp: now
       });
 
@@ -114,30 +154,46 @@ export function processCaseState(data = {}, action, payload = {}) {
       }
 
       if (action === "escalate") {
-        newData.timeline.push({ event: "Escalated to doctor", timestamp: now });
+        newData.timeline.push({
+          event: "Escalated to doctor",
+          reason: newData.escalation?.reason,
+          timestamp: now
+        });
         return { ...newData, status: "doctor_escalation" };
       }
       break;
 
     case "doctor_escalation":
       if (action === "doctor") {
+        newData.timeline.push({
+          event: "👨‍⚕️ Doctor picked case",
+          timestamp: now
+        });
         return { ...newData, status: "doctor_consultation" };
       }
       break;
 
     case "doctor_consultation":
       if (action === "doctor_notes") {
+        newData.timeline.push({
+          event: "Doctor notes added",
+          timestamp: now
+        });
         return { ...newData, status: "doctor_notes_added" };
       }
       break;
 
     case "doctor_notes_added":
       if (action === "doctor_decision") {
+        newData.timeline.push({
+          event: "Doctor decision completed",
+          timestamp: now
+        });
         return { ...newData, status: "completed" };
       }
       break;
   }
 
-  // 🔥 FIXED ERROR MESSAGE
+  // 🔥 FINAL SAFETY
   throw new Error(`Invalid transition: ${currentState} → ${action}`);
-                               }
+  }
