@@ -10,9 +10,14 @@ import {
   processCaseState
 } from "../services/clinicalStateMachine.js";
 
+// ❌ REMOVE OLD ENGINE
+// import { evaluateClinicalState } from "../services/clinicalRulesEngine.js";
+
+// ✅ NEW ENGINE
 import {
-  evaluateClinicalState
-} from "../services/clinicalRulesEngine.js";
+  evaluateRisk,
+  shouldEscalate
+} from "../engine/risk.engine.js";
 
 // 🔥 AI ORCHESTRATOR
 import {
@@ -21,7 +26,7 @@ import {
 
 /*
 ================================================
-CREATE (SYSTEM OWNS patient_id)
+CREATE
 ================================================
 */
 export const createEncounterHandler = async (req, res) => {
@@ -38,7 +43,6 @@ export const createEncounterHandler = async (req, res) => {
     res.json(encounter);
 
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Failed to create encounter" });
   }
 };
@@ -61,23 +65,18 @@ export const intakeHandler = async (req, res) => {
       { intake: req.body }
     );
 
-    const updated = await updateEncounterDB(
-      id,
-      updatedData,
-      updatedData.status
-    );
+    const updated = await updateEncounterDB(id, updatedData, updatedData.status);
 
     res.json(updated);
 
   } catch (err) {
-    console.error(err);
     res.status(400).json({ error: err.message });
   }
 };
 
 /*
 ================================================
-VITALS + CLINICAL SAFETY
+VITALS → 🔥 RISK ENGINE
 ================================================
 */
 export const addVitalsHandler = async (req, res) => {
@@ -93,45 +92,46 @@ export const addVitalsHandler = async (req, res) => {
       { vitals: req.body }
     );
 
-    const { severity, autoDecision, triggers } = evaluateClinicalState(updatedData);
+    // 🔥 RUN ENGINE
+    const result = evaluateRisk({
+      ...updatedData.vitals,
+      symptoms: updatedData.symptoms || []
+    });
 
     updatedData.triage = {
       ...(updatedData.triage || {}),
-      severity
+      severity: result.level,
+      reason: result.reason
     };
 
-    if (autoDecision) {
+    // 🔥 ESCALATION
+    if (shouldEscalate(result.level)) {
       updatedData.decision = {
-        type: autoDecision.type,
+        type: "doctor_escalation",
         timestamp: new Date().toISOString()
       };
 
       updatedData.timeline.push({
-        event: "🚨 Auto escalation triggered (vitals)",
-        reason: triggers,
+        event: "🚨 Auto escalation (risk engine - vitals)",
+        reason: result.reason,
         timestamp: new Date().toISOString()
       });
 
       updatedData.status = "doctor_escalation";
     }
 
-    const updated = await updateEncounterDB(
-      id,
-      updatedData,
-      updatedData.status
-    );
+    const updated = await updateEncounterDB(id, updatedData, updatedData.status);
 
     res.json(updated);
 
   } catch (err) {
-    console.error(err);
     res.status(400).json({ error: err.message });
   }
 };
 
 /*
 ================================================
-SYMPTOMS + CLINICAL SAFETY
+SYMPTOMS → 🔥 RE-EVALUATE
 ================================================
 */
 export const addSymptomsHandler = async (req, res) => {
@@ -147,326 +147,23 @@ export const addSymptomsHandler = async (req, res) => {
       { symptoms: req.body }
     );
 
-    const { severity, autoDecision, triggers } = evaluateClinicalState(updatedData);
+    const result = evaluateRisk({
+      ...updatedData.vitals,
+      symptoms: updatedData.symptoms
+    });
 
     updatedData.triage = {
       ...(updatedData.triage || {}),
-      severity
+      severity: result.level,
+      reason: result.reason
     };
 
-    if (autoDecision) {
+    if (shouldEscalate(result.level)) {
       updatedData.decision = {
-        type: autoDecision.type,
+        type: "doctor_escalation",
         timestamp: new Date().toISOString()
       };
 
       updatedData.timeline.push({
-        event: "🚨 Auto escalation triggered (symptoms)",
-        reason: triggers,
-        timestamp: new Date().toISOString()
-      });
-
-      updatedData.status = "doctor_escalation";
-    }
-
-    const updated = await updateEncounterDB(
-      id,
-      updatedData,
-      updatedData.status
-    );
-
-    res.json(updated);
-
-  } catch (err) {
-    console.error(err);
-    res.status(400).json({ error: err.message });
-  }
-};
-
-/*
-================================================
-NURSE (AI TRIGGERS HERE 🔥)
-================================================
-*/
-export const nurseAssessmentHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const record = await getEncounterDB(id);
-    if (!record) return res.status(404).json({ error: "Not found" });
-
-    let updatedData = await processCaseState(
-      record.encounter_data,
-      "nurse",
-      { nurseNotes: req.body }
-    );
-
-    // ======================================
-    // 🔥 AI ORCHESTRATOR INTEGRATION
-    // ======================================
-    const ai = await callAIOrchestrator({
-      inputText: req.body?.notes || "",
-      symptoms: updatedData.symptoms || [],
-      vitals: updatedData.vitals || {},
-      encounterId: id
-    });
-
-    updatedData.ai = ai;
-
-    updatedData.timeline.push({
-      event: "🤖 AI nurse assist completed",
-      data: ai,
-      timestamp: new Date().toISOString()
-    });
-
-    const updated = await updateEncounterDB(
-      id,
-      updatedData,
-      updatedData.status
-    );
-
-    res.json({
-      success: true,
-      stage: "nurse",
-      ai,
-      encounter: updated
-    });
-
-  } catch (err) {
-    console.error(err);
-    res.status(400).json({ error: err.message });
-  }
-};
-
-/*
-================================================
-VALIDATION
-================================================
-*/
-export const validateEncounterHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const record = await getEncounterDB(id);
-    if (!record) return res.status(404).json({ error: "Not found" });
-
-    const updatedData = await processCaseState(
-      record.encounter_data,
-      "validate",
-      {
-        validation: {
-          clinician: req.body.clinician,
-          notes: req.body.notes,
-          timestamp: new Date().toISOString()
-        }
-      }
-    );
-
-    const updated = await updateEncounterDB(
-      id,
-      updatedData,
-      updatedData.status
-    );
-
-    res.json(updated);
-
-  } catch (err) {
-    console.error(err);
-    res.status(400).json({ error: err.message });
-  }
-};
-
-/*
-================================================
-DECISION (ENFORCED)
-================================================
-*/
-export const decisionHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { type, followUp } = req.body;
-
-    const record = await getEncounterDB(id);
-    if (!record) return res.status(404).json({ error: "Not found" });
-
-    if (!type) {
-      return res.status(400).json({ error: "Decision type is required" });
-    }
-
-    let action;
-
-    if (type === "doctor_escalation") action = "escalate";
-    else if (type === "followup_scheduled") action = "followup";
-    else action = "treat";
-
-    let updatedData = await processCaseState(
-      record.encounter_data,
-      action,
-      {
-        decision: {
-          type,
-          timestamp: new Date().toISOString()
-        }
-      }
-    );
-
-    updatedData.timeline.push({
-      event: "📋 Decision applied",
-      type,
-      timestamp: new Date().toISOString()
-    });
-
-    const updated = await updateEncounterDB(
-      id,
-      updatedData,
-      updatedData.status
-    );
-
-    res.json(updated);
-
-  } catch (err) {
-    console.error(err);
-    res.status(400).json({ error: err.message });
-  }
-};
-
-/*
-================================================
-DOCTOR FLOW
-================================================
-*/
-
-// 👨‍⚕️ START CONSULTATION
-export const doctorConsultationHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { clinician } = req.body;
-
-    const record = await getEncounterDB(id);
-    if (!record) return res.status(404).json({ error: "Not found" });
-
-    const updatedData = await processCaseState(
-      record.encounter_data,
-      "doctor",
-      {
-        doctor: {
-          clinician,
-          startedAt: new Date().toISOString()
-        }
-      }
-    );
-
-    const updated = await updateEncounterDB(
-      id,
-      updatedData,
-      updatedData.status
-    );
-
-    res.json(updated);
-
-  } catch (err) {
-    console.error(err);
-    res.status(400).json({ error: err.message });
-  }
-};
-
-// 📝 DOCTOR NOTES
-export const doctorNotesHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { notes, diagnosis } = req.body;
-
-    const record = await getEncounterDB(id);
-    if (!record) return res.status(404).json({ error: "Not found" });
-
-    const updatedData = await processCaseState(
-      record.encounter_data,
-      "doctor_notes",
-      {
-        doctorNotes: {
-          notes,
-          diagnosis,
-          timestamp: new Date().toISOString()
-        }
-      }
-    );
-
-    const updated = await updateEncounterDB(
-      id,
-      updatedData,
-      updatedData.status
-    );
-
-    res.json(updated);
-
-  } catch (err) {
-    console.error(err);
-    res.status(400).json({ error: err.message });
-  }
-};
-
-// ✅ FINAL DECISION
-export const doctorDecisionHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { type, reason } = req.body;
-
-    const record = await getEncounterDB(id);
-    if (!record) return res.status(404).json({ error: "Not found" });
-
-    const updatedData = await processCaseState(
-      record.encounter_data,
-      "doctor_decision",
-      {
-        doctorDecision: {
-          type,
-          reason,
-          timestamp: new Date().toISOString()
-        }
-      }
-    );
-
-    const updated = await updateEncounterDB(
-      id,
-      updatedData,
-      updatedData.status
-    );
-
-    res.json(updated);
-
-  } catch (err) {
-    console.error(err);
-    res.status(400).json({ error: err.message });
-  }
-};
-
-/*
-================================================
-GET + TIMELINE
-================================================
-*/
-export const getEncounterHandler = async (req, res) => {
-  try {
-    const record = await getEncounterDB(req.params.id);
-    if (!record) return res.status(404).json({ error: "Not found" });
-    res.json(record);
-  } catch (err) {
-    res.status(500).json({ error: "Fetch failed" });
-  }
-};
-
-export const getEncounterTimelineHandler = async (req, res) => {
-  try {
-    const record = await getEncounterDB(req.params.id);
-    if (!record) return res.status(404).json({ error: "Not found" });
-
-    res.json({
-      encounterId: record.id,
-      state: record.status,
-      timeline: record.encounter_data.timeline || []
-    });
-
-  } catch (err) {
-    res.status(500).json({ error: "Timeline fetch failed" });
-  }
-};
+        event: "🚨 Auto escalation (risk engine - symptoms)",
+        reason:
