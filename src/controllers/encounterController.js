@@ -432,3 +432,21 @@ export const doctorDecisionHandler = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
+/*
+================================================
+TIMELINE
+================================================
+*/
+export const getEncounterTimelineHandler = async (req, res) => {
+  try {
+    const record = await getEncounterDB(req.params.id);
+    if (!record) return res.status(404).json({ error: "Not found" });
+
+    res.json({
+      timeline: record.encounter_data?.timeline || []
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: "Timeline fetch failed" });
+  }
+}
