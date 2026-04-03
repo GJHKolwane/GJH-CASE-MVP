@@ -7,10 +7,10 @@ export function determineQueue(caseData = {}) {
 
   const severity =
     caseData?.finalSeverity ||
-    caseData?.triage?.severity ||
+    caseData?.encounter_data?.triage?.severity ||
     "LOW";
 
-  const isEscalated = caseData?.escalation?.status;
+  const isEscalated = caseData?.status === "doctor_escalation";
 
   /*
   ========================================
@@ -80,10 +80,10 @@ export function groupCasesByQueue(cases = []) {
 
     const severity =
       c?.finalSeverity ||
-      c?.triage?.severity ||
+      c?.encounter_data?.triage?.severity ||
       "LOW";
 
-    const isEscalated = c?.escalation?.status;
+    const isEscalated = c?.status === "doctor_escalation";
 
     /*
     ========================================
