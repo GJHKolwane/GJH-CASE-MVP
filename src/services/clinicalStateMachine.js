@@ -1,3 +1,5 @@
+// src/services/clinicalStateMachine.js
+
 import { createEscalation } from "./escalation.service.js";
 import { assignDoctor } from "./doctor.service.js";
 import { buildRouting } from "./routing.service.js";
@@ -6,10 +8,13 @@ export function processCaseState(data = {}, action, payload = {}) {
 
   let currentState = data.status || "created";
 
-  // Merge incoming payload safely
+  // ✅ FIXED: ALWAYS STORE IN encounter_data (single source of truth)
   let newData = {
     ...data,
-    ...payload,
+    encounter_data: {
+      ...(data.encounter_data || {}),
+      ...payload
+    },
     timeline: [...(data.timeline || [])]
   };
 
@@ -18,34 +23,34 @@ export function processCaseState(data = {}, action, payload = {}) {
   /*
   ========================================
   🚨 AUTO ESCALATION INJECTION
-  (idempotent — no duplicate timeline spam)
   ========================================
   */
 
   const finalSeverity =
     newData.finalSeverity ||
-    newData.triage?.severity ||
+    newData.encounter_data?.triage?.severity ||
     "LOW";
 
   const prevEscalation = data.escalation || {};
 
   const escalation = createEscalation({
     finalSeverity,
-    vitals: newData.vitals,
-    symptoms: newData.symptoms
+    vitals: newData.encounter_data?.vitals,
+    symptoms: newData.encounter_data?.symptoms
   });
 
   newData.escalation = escalation;
-  newData.routing = buildRouting(newData);
-  
 
-  // Log ONLY when escalation is newly triggered or level changes
+  // 🔥 ROUTING (first pass)
+  newData.routing = buildRouting(newData);
+
+  // ✅ Timeline (idempotent escalation logging)
   if (
     escalation.status &&
     (!prevEscalation.status || prevEscalation.level !== escalation.level)
   ) {
     newData.timeline.push({
-      event: `🚨 Auto-escalation triggered (${escalation.level})`,
+      event: `🚨 Auto escalation (${escalation.level})`,
       reason: escalation.reason,
       timestamp: now
     });
@@ -53,7 +58,7 @@ export function processCaseState(data = {}, action, payload = {}) {
 
   /*
   ========================================
-  👨‍⚕️ DOCTOR AUTO ASSIGNMENT (idempotent)
+  👨‍⚕️ DOCTOR AUTO ASSIGNMENT
   ========================================
   */
 
@@ -75,7 +80,7 @@ export function processCaseState(data = {}, action, payload = {}) {
 
   /*
   ========================================
-  📦 ROUTING ENGINE (idempotent)
+  📦 ROUTING ENGINE (final)
   ========================================
   */
 
@@ -97,11 +102,11 @@ export function processCaseState(data = {}, action, payload = {}) {
   ========================================
   */
 
-  const severity = newData.escalation?.level;
+  const severity = escalation?.level;
 
-  // 🔥 AUTO-ROUTING INTO ESCALATION STATE (safe)
+  // 🔥 AUTO ESCALATION STATE
   if (
-    newData.escalation?.status &&
+    escalation?.status &&
     currentState !== "doctor_escalation" &&
     currentState !== "doctor_consultation" &&
     action !== "doctor"
@@ -116,7 +121,7 @@ export function processCaseState(data = {}, action, payload = {}) {
 
     if (action === "doctor") {
       newData.timeline.push({
-        event: "👨‍⚕️ Doctor access (override mode)",
+        event: "👨‍⚕️ Doctor access (override)",
         timestamp: now
       });
 
@@ -142,8 +147,8 @@ export function processCaseState(data = {}, action, payload = {}) {
 
     if (action === "escalate") {
       newData.timeline.push({
-        event: "🚨 Escalated (override mode)",
-        reason: newData.escalation?.reason,
+        event: "🚨 Escalated (manual override)",
+        reason: escalation?.reason,
         timestamp: now
       });
 
@@ -211,7 +216,7 @@ export function processCaseState(data = {}, action, payload = {}) {
       if (action === "escalate") {
         newData.timeline.push({
           event: "Escalated to doctor",
-          reason: newData.escalation?.reason,
+          reason: escalation?.reason,
           timestamp: now
         });
         return { ...newData, status: "doctor_escalation" };
@@ -249,6 +254,6 @@ export function processCaseState(data = {}, action, payload = {}) {
       break;
   }
 
-  // 🔥 FINAL SAFETY
+  // ❌ INVALID TRANSITION
   throw new Error(`Invalid transition: ${currentState} → ${action}`);
-}
+    }
