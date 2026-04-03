@@ -36,6 +36,8 @@ export function processCaseState(data = {}, action, payload = {}) {
   });
 
   newData.escalation = escalation;
+  newData.routing = buildRouting(newData);
+  
 
   // Log ONLY when escalation is newly triggered or level changes
   if (
