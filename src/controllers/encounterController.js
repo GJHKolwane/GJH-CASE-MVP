@@ -73,7 +73,7 @@ export const intakeHandler = async (req, res) => {
 
 /*
 ================================================
-VITALS → 🔥 RISK ENGINE
+VITALS → 🔥 RISK ENGINE (FIXED)
 ================================================
 */
 export const addVitalsHandler = async (req, res) => {
@@ -89,15 +89,20 @@ export const addVitalsHandler = async (req, res) => {
       { vitals: req.body }
     );
 
+    // ✅ FIX: read vitals from encounter_data
     const result = evaluateRisk({
-      ...updatedData.vitals,
-      symptoms: updatedData.symptoms || []
+      ...(updatedData.encounter_data?.vitals || {}),
+      symptoms: updatedData.encounter_data?.symptoms || []
     });
 
-    updatedData.triage = {
-      ...(updatedData.triage || {}),
-      severity: result.level,
-      reason: result.reason
+    // ✅ FIX: store triage INSIDE encounter_data
+    updatedData.encounter_data = {
+      ...(updatedData.encounter_data || {}),
+      triage: {
+        ...(updatedData.encounter_data?.triage || {}),
+        severity: result.level,
+        reason: result.reason
+      }
     };
 
     if (shouldEscalate(result.level)) {
@@ -126,7 +131,7 @@ export const addVitalsHandler = async (req, res) => {
 
 /*
 ================================================
-SYMPTOMS → 🔥 RE-EVALUATE
+SYMPTOMS → 🔥 RE-EVALUATE (FIXED)
 ================================================
 */
 export const addSymptomsHandler = async (req, res) => {
@@ -142,15 +147,20 @@ export const addSymptomsHandler = async (req, res) => {
       { symptoms: req.body }
     );
 
+    // ✅ FIX: correct data source
     const result = evaluateRisk({
-      ...updatedData.vitals,
-      symptoms: updatedData.symptoms
+      ...(updatedData.encounter_data?.vitals || {}),
+      symptoms: updatedData.encounter_data?.symptoms || []
     });
 
-    updatedData.triage = {
-      ...(updatedData.triage || {}),
-      severity: result.level,
-      reason: result.reason
+    // ✅ FIX: store correctly
+    updatedData.encounter_data = {
+      ...(updatedData.encounter_data || {}),
+      triage: {
+        ...(updatedData.encounter_data?.triage || {}),
+        severity: result.level,
+        reason: result.reason
+      }
     };
 
     if (shouldEscalate(result.level)) {
@@ -195,20 +205,20 @@ export const nurseAssessmentHandler = async (req, res) => {
       { nurseNotes: req.body }
     );
 
-    // 🔥 AI CALL
     const ai = await callAIOrchestrator({
       inputText: req.body?.notes || "",
-      symptoms: updatedData.symptoms || [],
-      vitals: updatedData.vitals || {},
+      symptoms: updatedData.encounter_data?.symptoms || [],
+      vitals: updatedData.encounter_data?.vitals || {},
       encounterId: id
     });
 
     updatedData.ai = ai;
 
-    // 🔥 HYBRID LOGIC
     const aiRisk = ai?.riskLevel?.toUpperCase();
     const aiConfidence = ai?.confidence || 0;
-    const mcpSeverity = updatedData.triage?.severity || "LOW";
+
+    const mcpSeverity =
+      updatedData.encounter_data?.triage?.severity || "LOW";
 
     let finalSeverity = mcpSeverity;
 
@@ -338,6 +348,7 @@ export const getEncounterHandler = async (req, res) => {
     res.status(500).json({ error: "Fetch failed" });
   }
 };
+
 /*
 ================================================
 DOCTOR CONSULTATION
@@ -364,7 +375,6 @@ export const doctorConsultationHandler = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
-
 
 /*
 ================================================
@@ -399,7 +409,6 @@ export const doctorNotesHandler = async (req, res) => {
   }
 };
 
-
 /*
 ================================================
 DOCTOR DECISION
@@ -432,6 +441,7 @@ export const doctorDecisionHandler = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
+
 /*
 ================================================
 TIMELINE
@@ -449,4 +459,4 @@ export const getEncounterTimelineHandler = async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: "Timeline fetch failed" });
   }
-}
+};
