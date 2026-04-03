@@ -10,9 +10,11 @@ export function determineQueue(caseData = {}) {
     caseData?.triage?.severity ||
     "LOW";
 
+  const isEscalated = caseData?.escalation?.status;
+
   /*
   ========================================
-  🚨 CRITICAL → URGENT QUEUE
+  🚨 CRITICAL ALWAYS WINS
   ========================================
   */
   if (severity === "CRITICAL") {
@@ -21,10 +23,10 @@ export function determineQueue(caseData = {}) {
 
   /*
   ========================================
-  ⚠️ HIGH → HIGH PRIORITY
+  ⚠️ HIGH OR ESCALATED
   ========================================
   */
-  if (severity === "HIGH") {
+  if (severity === "HIGH" || isEscalated) {
     return "HIGH_PRIORITY";
   }
 
@@ -46,6 +48,11 @@ export function buildRouting(caseData = {}) {
 
   let priority = "NORMAL";
 
+  /*
+  ========================================
+  PRIORITY MAPPING
+  ========================================
+  */
   if (queue === "CRITICAL_QUEUE") {
     priority = "URGENT";
   } else if (queue === "HIGH_PRIORITY") {
@@ -76,9 +83,16 @@ export function groupCasesByQueue(cases = []) {
       c?.triage?.severity ||
       "LOW";
 
+    const isEscalated = c?.escalation?.status;
+
+    /*
+    ========================================
+    GROUPING LOGIC
+    ========================================
+    */
     if (severity === "CRITICAL") {
       CRITICAL_QUEUE.push(c);
-    } else if (severity === "HIGH") {
+    } else if (severity === "HIGH" || isEscalated) {
       HIGH_PRIORITY.push(c);
     } else {
       NORMAL.push(c);
