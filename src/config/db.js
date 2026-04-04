@@ -6,7 +6,7 @@ user: "postgres",
 host: "localhost",
 database: "gjhdb",
 password: "postgres",
-port: 5432,
+port: 5433,
 });
 
 export const query = (text, params) => pool.query(text, params);
