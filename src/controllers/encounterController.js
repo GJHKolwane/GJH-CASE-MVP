@@ -30,16 +30,36 @@ export const createEncounterHandler = async (req, res) => {
   try {
     const { national_id } = req.body || {};
 
+    const encounterId = crypto.randomUUID();   // 🔥 encounter ID
     const patientId = crypto.randomUUID();
 
-    const encounter = await createEncounterDB(
-      patientId,
-      national_id || null
-    );
+    const encounterPayload = {
+      id: encounterId,
+      patient_id: patientId,
+      national_id: national_id || null,
+      status: "CREATED",
+      encounter_data: {
+        timeline: [
+          {
+            event: "🆕 Encounter created",
+            timestamp: new Date().toISOString()
+          }
+        ]
+      }
+    };
 
-    res.json(encounter);
+    // 🔍 DEBUG LOG (keep for now)
+    console.log("Creating encounter:", encounterPayload);
+
+    const encounter = await createEncounterDB(encounterPayload);
+
+    res.json({
+      id: encounterId,
+      success: true
+    });
 
   } catch (err) {
+    console.error("❌ CREATE ERROR:", err);  // 🔥 IMPORTANT
     res.status(500).json({ error: "Failed to create encounter" });
   }
 };
