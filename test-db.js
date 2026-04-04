@@ -5,7 +5,7 @@ async function testDB() {
     const res = await pool.query("SELECT NOW()");
     console.log("✅ DB Connected:", res.rows[0]);
   } catch (err) {
-    console.error("❌ DB Error:", err.message);
+    console.error("❌ DB Error FULL:", err);
   } finally {
     process.exit();
   }
