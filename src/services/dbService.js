@@ -88,4 +88,4 @@ export async function updateEncounterDB(id, data, status) {
     console.error("❌ DB UPDATE ERROR:", err);
     throw err;
   }
-      }
+}
