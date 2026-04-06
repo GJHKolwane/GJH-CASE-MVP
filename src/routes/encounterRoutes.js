@@ -26,7 +26,25 @@ router.post("/", createEncounterHandler);
 
 /*
 ================================================
-GET
+GET ALL ENCOUNTERS (QUEUE) 🔥 FIX ADDED
+================================================
+*/
+router.get("/", async (req, res) => {
+  try {
+    const result = await global.db.query(
+      "SELECT * FROM encounters ORDER BY created_at DESC"
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error("GET ALL ENCOUNTERS ERROR:", err);
+    res.status(500).json({ message: "Failed to fetch encounters" });
+  }
+});
+
+/*
+================================================
+GET SINGLE + TIMELINE
 ================================================
 */
 router.get("/:id", getEncounterHandler);
