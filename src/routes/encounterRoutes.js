@@ -1,4 +1,5 @@
 import express from "express";
+import pool from "../config/db.js";
 
 import {
   createEncounterHandler,
@@ -19,20 +20,22 @@ const router = express.Router();
 
 /*
 ================================================
-ENTRY
+HEALTH CHECK
 ================================================
 */
-router.post("/", createEncounterHandler);
+router.get("/health", (req, res) => {
+  res.json({ status: "encounter routes OK" });
+});
 
 /*
 ================================================
-GET ALL ENCOUNTERS (QUEUE) 🔥 FIX ADDED
+GET ALL ENCOUNTERS (🔥 THIS FIXES YOUR ERROR)
 ================================================
 */
 router.get("/", async (req, res) => {
   try {
-    const result = await global.db.query(
-      "SELECT * FROM encounters ORDER BY created_at DESC"
+    const result = await pool.query(
+      "SELECT * FROM encounters ORDER BY id DESC"
     );
 
     res.json(result.rows);
@@ -44,7 +47,14 @@ router.get("/", async (req, res) => {
 
 /*
 ================================================
-GET SINGLE + TIMELINE
+ENTRY
+================================================
+*/
+router.post("/", createEncounterHandler);
+
+/*
+================================================
+GET SINGLE
 ================================================
 */
 router.get("/:id", getEncounterHandler);
