@@ -8,11 +8,10 @@ CREATE
 */
 export async function createEncounterDB(payload) {
   try {
-    // 🔥 Ensure IDs exist (fallback safety)
     const id = payload.id || uuidv4();
     const patientId = payload.patient_id || uuidv4();
 
-    const initialData = payload.encounter_data || {
+    const initialData = payload.patient_data || {
       timeline: [
         {
           event: "🆕 Encounter created",
@@ -23,7 +22,7 @@ export async function createEncounterDB(payload) {
 
     const res = await query(
       `INSERT INTO encounters 
-       (id, patient_id, national_id, status, encounter_data)
+       (id, patient_id, national_id, status, patient_data)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
       [
@@ -31,7 +30,7 @@ export async function createEncounterDB(payload) {
         patientId,
         payload.national_id || null,
         payload.status || "CREATED",
-        initialData // ✅ NO JSON.stringify (pg handles JSONB)
+        initialData
       ]
     );
 
