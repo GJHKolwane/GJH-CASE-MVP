@@ -21,19 +21,29 @@ import {
 
 /*
 ================================================
-CREATE
+CREATE (MCP CONTROLS INPUT 🔥)
 ================================================
 */
 export const createEncounterHandler = async (req, res) => {
   try {
-    const { national_id } = req.body || {};
+    const body = req.body || {};
 
-    const patientId = crypto.randomUUID();
+    // 🔥 MCP NORMALIZATION
+    const normalized = {
+      patient_data: {
+        name:
+          body.patient_data?.name ||
+          body.patientName ||
+          body.name ||
+          "Unknown Patient"
+      },
+      national_id:
+        body.national_id ||
+        body.nationalId ||
+        null
+    };
 
-    const encounter = await createEncounterDB(
-      patientId,
-      national_id || null
-    );
+    const encounter = await createEncounterDB(normalized);
 
     res.json(encounter);
 
@@ -56,7 +66,7 @@ export const intakeHandler = async (req, res) => {
     if (!record) return res.status(404).json({ error: "Not found" });
 
     const updatedData = await processCaseState(
-      record.encounter_data,
+      record.encounter_data || {},
       "intake",
       { intake: req.body }
     );
@@ -66,13 +76,14 @@ export const intakeHandler = async (req, res) => {
     res.json(updated);
 
   } catch (err) {
+    console.error("INTAKE ERROR:", err);
     res.status(400).json({ error: err.message });
   }
 };
 
 /*
 ================================================
-VITALS → RISK ENGINE (FIXED)
+VITALS → RISK ENGINE
 ================================================
 */
 export const addVitalsHandler = async (req, res) => {
@@ -83,23 +94,20 @@ export const addVitalsHandler = async (req, res) => {
     if (!record) return res.status(404).json({ error: "Not found" });
 
     let updatedData = await processCaseState(
-      record.encounter_data,
+      record.encounter_data || {},
       "vitals",
       { vitals: req.body }
     );
 
     const result = evaluateRisk({
-      ...(updatedData.encounter_data?.vitals || {}),
-      symptoms: updatedData.encounter_data?.symptoms || []
+      ...(updatedData?.vitals || {}),
+      symptoms: updatedData?.symptoms || []
     });
 
-    updatedData.encounter_data = {
-      ...(updatedData.encounter_data || {}),
-      triage: {
-        ...(updatedData.encounter_data?.triage || {}),
-        severity: result.level,
-        reason: result.reason
-      }
+    updatedData.triage = {
+      ...(updatedData.triage || {}),
+      severity: result.level,
+      reason: result.reason
     };
 
     if (shouldEscalate(result.level)) {
@@ -108,11 +116,14 @@ export const addVitalsHandler = async (req, res) => {
         timestamp: new Date().toISOString()
       };
 
-      updatedData.timeline.push({
-        event: "🚨 Auto escalation (vitals)",
-        reason: result.reason,
-        timestamp: new Date().toISOString()
-      });
+      updatedData.timeline = [
+        ...(updatedData.timeline || []),
+        {
+          event: "🚨 Auto escalation (vitals)",
+          reason: result.reason,
+          timestamp: new Date().toISOString()
+        }
+      ];
 
       updatedData.status = "doctor_escalation";
     }
@@ -122,13 +133,14 @@ export const addVitalsHandler = async (req, res) => {
     res.json(updated);
 
   } catch (err) {
+    console.error("VITALS ERROR:", err);
     res.status(400).json({ error: err.message });
   }
 };
 
 /*
 ================================================
-SYMPTOMS → RE-EVALUATE (FIXED)
+SYMPTOMS → RE-EVALUATE
 ================================================
 */
 export const addSymptomsHandler = async (req, res) => {
@@ -139,23 +151,20 @@ export const addSymptomsHandler = async (req, res) => {
     if (!record) return res.status(404).json({ error: "Not found" });
 
     let updatedData = await processCaseState(
-      record.encounter_data,
+      record.encounter_data || {},
       "symptoms",
       { symptoms: req.body }
     );
 
     const result = evaluateRisk({
-      ...(updatedData.encounter_data?.vitals || {}),
-      symptoms: updatedData.encounter_data?.symptoms || []
+      ...(updatedData?.vitals || {}),
+      symptoms: updatedData?.symptoms || []
     });
 
-    updatedData.encounter_data = {
-      ...(updatedData.encounter_data || {}),
-      triage: {
-        ...(updatedData.encounter_data?.triage || {}),
-        severity: result.level,
-        reason: result.reason
-      }
+    updatedData.triage = {
+      ...(updatedData.triage || {}),
+      severity: result.level,
+      reason: result.reason
     };
 
     if (shouldEscalate(result.level)) {
@@ -164,11 +173,14 @@ export const addSymptomsHandler = async (req, res) => {
         timestamp: new Date().toISOString()
       };
 
-      updatedData.timeline.push({
-        event: "🚨 Auto escalation (symptoms)",
-        reason: result.reason,
-        timestamp: new Date().toISOString()
-      });
+      updatedData.timeline = [
+        ...(updatedData.timeline || []),
+        {
+          event: "🚨 Auto escalation (symptoms)",
+          reason: result.reason,
+          timestamp: new Date().toISOString()
+        }
+      ];
 
       updatedData.status = "doctor_escalation";
     }
@@ -178,6 +190,7 @@ export const addSymptomsHandler = async (req, res) => {
     res.json(updated);
 
   } catch (err) {
+    console.error("SYMPTOMS ERROR:", err);
     res.status(400).json({ error: err.message });
   }
 };
@@ -195,25 +208,23 @@ export const nurseAssessmentHandler = async (req, res) => {
     if (!record) return res.status(404).json({ error: "Not found" });
 
     let updatedData = await processCaseState(
-      record.encounter_data,
+      record.encounter_data || {},
       "nurse",
       { nurseNotes: req.body }
     );
 
     const ai = await callAIOrchestrator({
       inputText: req.body?.notes || "",
-      symptoms: updatedData.encounter_data?.symptoms || [],
-      vitals: updatedData.encounter_data?.vitals || {},
+      symptoms: updatedData?.symptoms || [],
+      vitals: updatedData?.vitals || {},
       encounterId: id
     });
-
-    updatedData.ai = ai;
 
     const aiRisk = ai?.riskLevel?.toUpperCase();
     const aiConfidence = ai?.confidence || 0;
 
     const mcpSeverity =
-      updatedData.encounter_data?.triage?.severity || "LOW";
+      updatedData?.triage?.severity || "LOW";
 
     let finalSeverity = mcpSeverity;
 
@@ -227,12 +238,15 @@ export const nurseAssessmentHandler = async (req, res) => {
     updatedData.finalSeverity = finalSeverity;
     updatedData.escalated = escalated;
 
-    updatedData.timeline.push({
-      event: "🤖 AI nurse assist + hybrid decision",
-      ai,
-      finalSeverity,
-      timestamp: new Date().toISOString()
-    });
+    updatedData.timeline = [
+      ...(updatedData.timeline || []),
+      {
+        event: "🤖 AI nurse assist + hybrid decision",
+        ai,
+        finalSeverity,
+        timestamp: new Date().toISOString()
+      }
+    ];
 
     const updated = await updateEncounterDB(id, updatedData, updatedData.status);
 
@@ -245,6 +259,7 @@ export const nurseAssessmentHandler = async (req, res) => {
     });
 
   } catch (err) {
+    console.error("NURSE ERROR:", err);
     res.status(400).json({ error: err.message });
   }
 };
@@ -262,7 +277,7 @@ export const validateEncounterHandler = async (req, res) => {
     if (!record) return res.status(404).json({ error: "Not found" });
 
     const updatedData = await processCaseState(
-      record.encounter_data,
+      record.encounter_data || {},
       "validate",
       {
         validation: {
@@ -278,6 +293,7 @@ export const validateEncounterHandler = async (req, res) => {
     res.json(updated);
 
   } catch (err) {
+    console.error("VALIDATION ERROR:", err);
     res.status(400).json({ error: err.message });
   }
 };
@@ -302,7 +318,7 @@ export const decisionHandler = async (req, res) => {
     else action = "treat";
 
     let updatedData = await processCaseState(
-      record.encounter_data,
+      record.encounter_data || {},
       action,
       {
         decision: {
@@ -312,17 +328,21 @@ export const decisionHandler = async (req, res) => {
       }
     );
 
-    updatedData.timeline.push({
-      event: "📋 Decision applied",
-      type,
-      timestamp: new Date().toISOString()
-    });
+    updatedData.timeline = [
+      ...(updatedData.timeline || []),
+      {
+        event: "📋 Decision applied",
+        type,
+        timestamp: new Date().toISOString()
+      }
+    ];
 
     const updated = await updateEncounterDB(id, updatedData, updatedData.status);
 
     res.json(updated);
 
   } catch (err) {
+    console.error("DECISION ERROR:", err);
     res.status(400).json({ error: err.message });
   }
 };
@@ -357,7 +377,7 @@ export const doctorConsultationHandler = async (req, res) => {
     if (!record) return res.status(404).json({ error: "Not found" });
 
     const updatedData = await processCaseState(
-      record.encounter_data,
+      record.encounter_data || {},
       "doctor",
       {}
     );
@@ -367,6 +387,7 @@ export const doctorConsultationHandler = async (req, res) => {
     res.json(updated);
 
   } catch (err) {
+    console.error("DOCTOR CONSULT ERROR:", err);
     res.status(400).json({ error: err.message });
   }
 };
@@ -384,7 +405,7 @@ export const doctorNotesHandler = async (req, res) => {
     if (!record) return res.status(404).json({ error: "Not found" });
 
     const updatedData = await processCaseState(
-      record.encounter_data,
+      record.encounter_data || {},
       "doctor_notes",
       {
         doctorNotes: {
@@ -400,6 +421,7 @@ export const doctorNotesHandler = async (req, res) => {
     res.json(updated);
 
   } catch (err) {
+    console.error("DOCTOR NOTES ERROR:", err);
     res.status(400).json({ error: err.message });
   }
 };
@@ -417,7 +439,7 @@ export const doctorDecisionHandler = async (req, res) => {
     if (!record) return res.status(404).json({ error: "Not found" });
 
     const updatedData = await processCaseState(
-      record.encounter_data,
+      record.encounter_data || {},
       "doctor_decision",
       {
         doctorDecision: {
@@ -433,6 +455,7 @@ export const doctorDecisionHandler = async (req, res) => {
     res.json(updated);
 
   } catch (err) {
+    console.error("DOCTOR DECISION ERROR:", err);
     res.status(400).json({ error: err.message });
   }
 };
