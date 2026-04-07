@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from "uuid";
 
 /*
 ================================================
-CREATE
+CREATE (FIXED ✅)
 ================================================
 */
 export async function createEncounterDB(payload) {
@@ -11,7 +11,13 @@ export async function createEncounterDB(payload) {
     const id = payload.id || uuidv4();
     const patientId = payload.patient_id || uuidv4();
 
-    const initialData = payload.patient_data || {
+    // ✅ FIX: Proper structured encounter_data
+    const initialData = {
+      patient: {
+        id: patientId,
+        name: payload.patient_data?.name || "Unknown Patient"
+      },
+
       timeline: [
         {
           event: "🆕 Encounter created",
@@ -22,7 +28,7 @@ export async function createEncounterDB(payload) {
 
     const res = await query(
       `INSERT INTO encounters 
-       (id, patient_id, national_id, status, patient_data)
+       (id, patient_id, national_id, status, encounter_data)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
       [
@@ -75,7 +81,7 @@ export async function updateEncounterDB(id, data, status) {
        WHERE id = $3
        RETURNING *`,
       [
-        data,                     // ✅ NO JSON.stringify
+        data,
         status || "UPDATED",
         id
       ]
