@@ -99,6 +99,9 @@ export const addVitalsHandler = async (req, res) => {
       { vitals: req.body }
     );
 
+    // ✅ CRITICAL FIX
+    updatedData.status = "vitals_completed";
+
     const result = evaluateRisk({
       ...(updatedData?.vitals || {}),
       symptoms: updatedData?.symptoms || []
@@ -125,10 +128,14 @@ export const addVitalsHandler = async (req, res) => {
         }
       ];
 
-      updatedData.status = "doctor_escalation";
+      updatedData.status = "doctor_escalation"; // override if critical
     }
 
-    const updated = await updateEncounterDB(id, updatedData, updatedData.status);
+    const updated = await updateEncounterDB(
+      id,
+      updatedData,
+      updatedData.status
+    );
 
     res.json(updated);
 
