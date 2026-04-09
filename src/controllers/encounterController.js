@@ -1,4 +1,3 @@
-```javascript
 import crypto from "crypto";
 
 import {
