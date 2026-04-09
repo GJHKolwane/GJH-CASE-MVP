@@ -1,3 +1,4 @@
+```javascript
 import crypto from "crypto";
 
 import {
@@ -21,14 +22,22 @@ import {
 
 /*
 ================================================
-CREATE (MCP CONTROLS INPUT 🔥)
+UTIL — TRACE LOGGER 🔥
+================================================
+*/
+const trace = (stage, id) => {
+  console.log(`🧭 [${stage.toUpperCase()}] id: ${id}`);
+};
+
+/*
+================================================
+CREATE
 ================================================
 */
 export const createEncounterHandler = async (req, res) => {
   try {
     const body = req.body || {};
 
-    // 🔥 MCP NORMALIZATION
     const normalized = {
       patient_data: {
         name:
@@ -44,6 +53,8 @@ export const createEncounterHandler = async (req, res) => {
     };
 
     const encounter = await createEncounterDB(normalized);
+
+    trace("create", encounter.id);
 
     res.json(encounter);
 
@@ -61,15 +72,22 @@ INTAKE
 export const intakeHandler = async (req, res) => {
   try {
     const { id } = req.params;
+    if (!id) return res.status(400).json({ error: "Missing encounter ID" });
+
+    trace("intake", id);
 
     const record = await getEncounterDB(id);
     if (!record) return res.status(404).json({ error: "Not found" });
 
-    const updatedData = await processCaseState(
+    let updatedData = await processCaseState(
       record.encounter_data || {},
       "intake",
       { intake: req.body }
     );
+
+    updatedData.status = "intake_completed";
+
+    console.log("➡️ intake result:", updatedData.status);
 
     const updated = await updateEncounterDB(id, updatedData, updatedData.status);
 
@@ -83,12 +101,15 @@ export const intakeHandler = async (req, res) => {
 
 /*
 ================================================
-VITALS → RISK ENGINE
+VITALS
 ================================================
 */
 export const addVitalsHandler = async (req, res) => {
   try {
     const { id } = req.params;
+    if (!id) return res.status(400).json({ error: "Missing encounter ID" });
+
+    trace("vitals", id);
 
     const record = await getEncounterDB(id);
     if (!record) return res.status(404).json({ error: "Not found" });
@@ -99,8 +120,9 @@ export const addVitalsHandler = async (req, res) => {
       { vitals: req.body }
     );
 
-    // ✅ CRITICAL FIX
     updatedData.status = "vitals_completed";
+
+    const now = new Date().toISOString();
 
     const result = evaluateRisk({
       ...(updatedData?.vitals || {}),
@@ -116,7 +138,7 @@ export const addVitalsHandler = async (req, res) => {
     if (shouldEscalate(result.level)) {
       updatedData.decision = {
         type: "doctor_escalation",
-        timestamp: new Date().toISOString()
+        timestamp: now
       };
 
       updatedData.timeline = [
@@ -124,18 +146,16 @@ export const addVitalsHandler = async (req, res) => {
         {
           event: "🚨 Auto escalation (vitals)",
           reason: result.reason,
-          timestamp: new Date().toISOString()
+          timestamp: now
         }
       ];
 
-      updatedData.status = "doctor_escalation"; // override if critical
+      updatedData.status = "doctor_escalation";
     }
 
-    const updated = await updateEncounterDB(
-      id,
-      updatedData,
-      updatedData.status
-    );
+    console.log("➡️ vitals result:", updatedData.status);
+
+    const updated = await updateEncounterDB(id, updatedData, updatedData.status);
 
     res.json(updated);
 
@@ -147,12 +167,15 @@ export const addVitalsHandler = async (req, res) => {
 
 /*
 ================================================
-SYMPTOMS → RE-EVALUATE
+SYMPTOMS
 ================================================
 */
 export const addSymptomsHandler = async (req, res) => {
   try {
     const { id } = req.params;
+    if (!id) return res.status(400).json({ error: "Missing encounter ID" });
+
+    trace("symptoms", id);
 
     const record = await getEncounterDB(id);
     if (!record) return res.status(404).json({ error: "Not found" });
@@ -162,6 +185,10 @@ export const addSymptomsHandler = async (req, res) => {
       "symptoms",
       { symptoms: req.body }
     );
+
+    updatedData.status = "symptoms_completed";
+
+    const now = new Date().toISOString();
 
     const result = evaluateRisk({
       ...(updatedData?.vitals || {}),
@@ -177,7 +204,7 @@ export const addSymptomsHandler = async (req, res) => {
     if (shouldEscalate(result.level)) {
       updatedData.decision = {
         type: "doctor_escalation",
-        timestamp: new Date().toISOString()
+        timestamp: now
       };
 
       updatedData.timeline = [
@@ -185,12 +212,14 @@ export const addSymptomsHandler = async (req, res) => {
         {
           event: "🚨 Auto escalation (symptoms)",
           reason: result.reason,
-          timestamp: new Date().toISOString()
+          timestamp: now
         }
       ];
 
       updatedData.status = "doctor_escalation";
     }
+
+    console.log("➡️ symptoms result:", updatedData.status);
 
     const updated = await updateEncounterDB(id, updatedData, updatedData.status);
 
@@ -204,12 +233,15 @@ export const addSymptomsHandler = async (req, res) => {
 
 /*
 ================================================
-NURSE (AI + HYBRID)
+NURSE (AI HYBRID)
 ================================================
 */
 export const nurseAssessmentHandler = async (req, res) => {
   try {
     const { id } = req.params;
+    if (!id) return res.status(400).json({ error: "Missing encounter ID" });
+
+    trace("nurse", id);
 
     const record = await getEncounterDB(id);
     if (!record) return res.status(404).json({ error: "Not found" });
@@ -219,6 +251,8 @@ export const nurseAssessmentHandler = async (req, res) => {
       "nurse",
       { nurseNotes: req.body }
     );
+
+    const now = new Date().toISOString();
 
     const ai = await callAIOrchestrator({
       inputText: req.body?.notes || "",
@@ -230,8 +264,7 @@ export const nurseAssessmentHandler = async (req, res) => {
     const aiRisk = ai?.riskLevel?.toUpperCase();
     const aiConfidence = ai?.confidence || 0;
 
-    const mcpSeverity =
-      updatedData?.triage?.severity || "LOW";
+    const mcpSeverity = updatedData?.triage?.severity || "LOW";
 
     let finalSeverity = mcpSeverity;
 
@@ -251,7 +284,7 @@ export const nurseAssessmentHandler = async (req, res) => {
         event: "🤖 AI nurse assist + hybrid decision",
         ai,
         finalSeverity,
-        timestamp: new Date().toISOString()
+        timestamp: now
       }
     ];
 
@@ -279,6 +312,9 @@ VALIDATION
 export const validateEncounterHandler = async (req, res) => {
   try {
     const { id } = req.params;
+    if (!id) return res.status(400).json({ error: "Missing encounter ID" });
+
+    trace("validate", id);
 
     const record = await getEncounterDB(id);
     if (!record) return res.status(404).json({ error: "Not found" });
@@ -313,6 +349,10 @@ DECISION
 export const decisionHandler = async (req, res) => {
   try {
     const { id } = req.params;
+    if (!id) return res.status(400).json({ error: "Missing encounter ID" });
+
+    trace("decision", id);
+
     const { type } = req.body;
 
     const record = await getEncounterDB(id);
@@ -361,7 +401,12 @@ GET
 */
 export const getEncounterHandler = async (req, res) => {
   try {
-    const record = await getEncounterDB(req.params.id);
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ error: "Missing encounter ID" });
+
+    trace("get", id);
+
+    const record = await getEncounterDB(id);
     if (!record) return res.status(404).json({ error: "Not found" });
 
     res.json(record);
@@ -379,6 +424,9 @@ DOCTOR CONSULTATION
 export const doctorConsultationHandler = async (req, res) => {
   try {
     const { id } = req.params;
+    if (!id) return res.status(400).json({ error: "Missing encounter ID" });
+
+    trace("doctor_consult", id);
 
     const record = await getEncounterDB(id);
     if (!record) return res.status(404).json({ error: "Not found" });
@@ -407,6 +455,9 @@ DOCTOR NOTES
 export const doctorNotesHandler = async (req, res) => {
   try {
     const { id } = req.params;
+    if (!id) return res.status(400).json({ error: "Missing encounter ID" });
+
+    trace("doctor_notes", id);
 
     const record = await getEncounterDB(id);
     if (!record) return res.status(404).json({ error: "Not found" });
@@ -441,6 +492,9 @@ DOCTOR DECISION
 export const doctorDecisionHandler = async (req, res) => {
   try {
     const { id } = req.params;
+    if (!id) return res.status(400).json({ error: "Missing encounter ID" });
+
+    trace("doctor_decision", id);
 
     const record = await getEncounterDB(id);
     if (!record) return res.status(404).json({ error: "Not found" });
@@ -474,7 +528,12 @@ TIMELINE
 */
 export const getEncounterTimelineHandler = async (req, res) => {
   try {
-    const record = await getEncounterDB(req.params.id);
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ error: "Missing encounter ID" });
+
+    trace("timeline", id);
+
+    const record = await getEncounterDB(id);
     if (!record) return res.status(404).json({ error: "Not found" });
 
     res.json({
@@ -485,3 +544,4 @@ export const getEncounterTimelineHandler = async (req, res) => {
     res.status(500).json({ error: "Timeline fetch failed" });
   }
 };
+```
