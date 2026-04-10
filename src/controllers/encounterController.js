@@ -78,17 +78,46 @@ export const intakeHandler = async (req, res) => {
     const record = await getEncounterDB(id);
     if (!record) return res.status(404).json({ error: "Not found" });
 
+    const { intake } = req.body;
+
+    if (!intake) {
+      return res.status(400).json({
+        error: "Missing structured intake data"
+      });
+    }
+
     let updatedData = await processCaseState(
       record.encounter_data || {},
       "intake",
-      { intake: req.body }
+      { intake } // ✅ FIXED (NO DOUBLE WRAP)
     );
 
     updatedData.status = "intake_completed";
 
+    // 🔥 OPTIONAL (but powerful): timeline visibility
+    updatedData.timeline = [
+      ...(updatedData.timeline || []),
+      {
+        event: "🧠 Clinical intake captured",
+        intakeSummary: {
+          age: intake?.patient?.age,
+          sex: intake?.patient?.sex,
+          flags: {
+            pregnant: intake?.context?.pregnant,
+            immunocompromised: intake?.context?.immunocompromised
+          }
+        },
+        timestamp: new Date().toISOString()
+      }
+    ];
+
     console.log("➡️ intake result:", updatedData.status);
 
-    const updated = await updateEncounterDB(id, updatedData, updatedData.status);
+    const updated = await updateEncounterDB(
+      id,
+      updatedData,
+      updatedData.status
+    );
 
     res.json(updated);
 
