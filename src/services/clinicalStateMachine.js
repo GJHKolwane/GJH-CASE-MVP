@@ -6,23 +6,84 @@ import { buildRouting } from "./routing.service.js";
 
 export function processCaseState(data = {}, action, payload = {}) {
 
-  let currentState = data.status || "created";
-
-  // ✅ FIXED: ALWAYS STORE IN encounter_data (single source of truth)
-  let newData = {
-    ...data,
-    encounter_data: {
-      ...(data.encounter_data || {}),
-      ...payload
-    },
-    timeline: [...(data.timeline || [])]
-  };
+  // ✅ Unified state source
+  let currentState = data.status || data.current_state || "created";
 
   const now = new Date().toISOString();
 
   /*
   ========================================
-  🚨 AUTO ESCALATION INJECTION
+  🧱 STRICT PAYLOAD NORMALIZATION
+  ========================================
+  */
+
+  let normalizedPayload = {};
+
+  if (action === "intake") {
+    normalizedPayload = {
+      intake: {
+        patient: payload?.intake?.patient || {},
+        medical: payload?.intake?.medical || {},
+        context: payload?.intake?.context || {}
+      }
+    };
+  }
+
+  if (action === "vitals") {
+    normalizedPayload = {
+      vitals: payload
+    };
+  }
+
+  if (action === "symptoms") {
+    normalizedPayload = {
+      symptoms: payload
+    };
+  }
+
+  if (action === "nurse") {
+    normalizedPayload = {
+      triage: payload
+    };
+  }
+
+  /*
+  ========================================
+  📦 SINGLE SOURCE OF TRUTH
+  ========================================
+  */
+
+  let newData = {
+    ...data,
+    encounter_data: {
+      ...(data.encounter_data || {}),
+      ...normalizedPayload
+    },
+    timeline: [...(data.timeline || [])]
+  };
+
+  /*
+  ========================================
+  🚨 HARD STATE GATES (NO SKIPPING)
+  ========================================
+  */
+
+  const enforce = (requiredState) => {
+    if (currentState !== requiredState) {
+      throw new Error(
+        `❌ Invalid step. Required: ${requiredState}, Current: ${currentState}`
+      );
+    }
+  };
+
+  if (action === "intake") enforce("created");
+  if (action === "vitals") enforce("intake_completed");
+  if (action === "symptoms") enforce("vitals_recorded");
+  if (action === "nurse") enforce("symptoms_recorded");
+
+  /*
+  ========================================
+  🚨 AUTO ESCALATION ENGINE
   ========================================
   */
 
@@ -41,10 +102,20 @@ export function processCaseState(data = {}, action, payload = {}) {
 
   newData.escalation = escalation;
 
-  // 🔥 ROUTING (first pass)
+  /*
+  ========================================
+  📦 ROUTING ENGINE (FIRST PASS)
+  ========================================
+  */
+
   newData.routing = buildRouting(newData);
 
-  // ✅ Timeline (idempotent escalation logging)
+  /*
+  ========================================
+  🧾 TIMELINE — ESCALATION
+  ========================================
+  */
+
   if (
     escalation.status &&
     (!prevEscalation.status || prevEscalation.level !== escalation.level)
@@ -80,7 +151,7 @@ export function processCaseState(data = {}, action, payload = {}) {
 
   /*
   ========================================
-  📦 ROUTING ENGINE (final)
+  📦 ROUTING ENGINE (FINAL PASS)
   ========================================
   */
 
@@ -104,7 +175,6 @@ export function processCaseState(data = {}, action, payload = {}) {
 
   const severity = escalation?.level;
 
-  // 🔥 AUTO ESCALATION STATE
   if (
     escalation?.status &&
     currentState !== "doctor_escalation" &&
@@ -113,7 +183,8 @@ export function processCaseState(data = {}, action, payload = {}) {
   ) {
     return {
       ...newData,
-      status: "doctor_escalation"
+      status: "doctor_escalation",
+      current_state: "doctor_escalation"
     };
   }
 
@@ -127,41 +198,31 @@ export function processCaseState(data = {}, action, payload = {}) {
 
       return {
         ...newData,
-        status: "doctor_consultation"
+        status: "doctor_consultation",
+        current_state: "doctor_consultation"
       };
     }
 
     if (action === "doctor_notes") {
       return {
         ...newData,
-        status: "doctor_notes_added"
+        status: "doctor_notes_added",
+        current_state: "doctor_notes_added"
       };
     }
 
     if (action === "doctor_decision") {
       return {
         ...newData,
-        status: "completed"
-      };
-    }
-
-    if (action === "escalate") {
-      newData.timeline.push({
-        event: "🚨 Escalated (manual override)",
-        reason: escalation?.reason,
-        timestamp: now
-      });
-
-      return {
-        ...newData,
-        status: "doctor_escalation"
+        status: "completed",
+        current_state: "completed"
       };
     }
   }
 
   /*
   ========================================
-  NORMAL FSM FLOW
+  🧠 NORMAL FSM FLOW (STRICT)
   ========================================
   */
 
@@ -169,57 +230,118 @@ export function processCaseState(data = {}, action, payload = {}) {
 
     case "created":
       if (action === "intake") {
-        newData.timeline.push({ event: "Intake completed", timestamp: now });
-        return { ...newData, status: "intake_completed" };
+        newData.timeline.push({
+          event: "🧾 Intake completed",
+          timestamp: now
+        });
+
+        return {
+          ...newData,
+          status: "intake_completed",
+          current_state: "intake_completed"
+        };
       }
       break;
 
     case "intake_completed":
       if (action === "vitals") {
-        newData.timeline.push({ event: "Vitals recorded", timestamp: now });
-        return { ...newData, status: "vitals_recorded" };
+        newData.timeline.push({
+          event: "💓 Vitals recorded",
+          timestamp: now
+        });
+
+        return {
+          ...newData,
+          status: "vitals_recorded",
+          current_state: "vitals_recorded"
+        };
       }
       break;
 
     case "vitals_recorded":
       if (action === "symptoms") {
-        newData.timeline.push({ event: "Symptoms recorded", timestamp: now });
-        return { ...newData, status: "symptoms_recorded" };
+        newData.timeline.push({
+          event: "🤒 Symptoms recorded",
+          timestamp: now
+        });
+
+        return {
+          ...newData,
+          status: "symptoms_recorded",
+          current_state: "symptoms_recorded"
+        };
       }
       break;
 
     case "symptoms_recorded":
       if (action === "nurse") {
-        newData.timeline.push({ event: "Nurse assessment completed", timestamp: now });
-        return { ...newData, status: "awaiting_clinician_validation" };
+        newData.timeline.push({
+          event: "👩‍⚕️ Nurse assessment completed",
+          timestamp: now
+        });
+
+        return {
+          ...newData,
+          status: "awaiting_clinician_validation",
+          current_state: "awaiting_clinician_validation"
+        };
       }
       break;
 
     case "awaiting_clinician_validation":
       if (action === "validate") {
-        newData.timeline.push({ event: "Validation completed", timestamp: now });
-        return { ...newData, status: "validated" };
+        newData.timeline.push({
+          event: "✅ Validation completed",
+          timestamp: now
+        });
+
+        return {
+          ...newData,
+          status: "validated",
+          current_state: "validated"
+        };
       }
       break;
 
     case "validated":
       if (action === "treat") {
-        newData.timeline.push({ event: "Treatment applied", timestamp: now });
-        return { ...newData, status: "treatment_applied" };
+        newData.timeline.push({
+          event: "💊 Treatment applied",
+          timestamp: now
+        });
+
+        return {
+          ...newData,
+          status: "treatment_applied",
+          current_state: "treatment_applied"
+        };
       }
 
       if (action === "followup") {
-        newData.timeline.push({ event: "Follow-up scheduled", timestamp: now });
-        return { ...newData, status: "followup_scheduled" };
+        newData.timeline.push({
+          event: "📅 Follow-up scheduled",
+          timestamp: now
+        });
+
+        return {
+          ...newData,
+          status: "followup_scheduled",
+          current_state: "followup_scheduled"
+        };
       }
 
       if (action === "escalate") {
         newData.timeline.push({
-          event: "Escalated to doctor",
+          event: "🚨 Escalated to doctor",
           reason: escalation?.reason,
           timestamp: now
         });
-        return { ...newData, status: "doctor_escalation" };
+
+        return {
+          ...newData,
+          status: "doctor_escalation",
+          current_state: "doctor_escalation"
+        };
       }
       break;
 
@@ -229,31 +351,51 @@ export function processCaseState(data = {}, action, payload = {}) {
           event: "👨‍⚕️ Doctor picked case",
           timestamp: now
         });
-        return { ...newData, status: "doctor_consultation" };
+
+        return {
+          ...newData,
+          status: "doctor_consultation",
+          current_state: "doctor_consultation"
+        };
       }
       break;
 
     case "doctor_consultation":
       if (action === "doctor_notes") {
         newData.timeline.push({
-          event: "Doctor notes added",
+          event: "📝 Doctor notes added",
           timestamp: now
         });
-        return { ...newData, status: "doctor_notes_added" };
+
+        return {
+          ...newData,
+          status: "doctor_notes_added",
+          current_state: "doctor_notes_added"
+        };
       }
       break;
 
     case "doctor_notes_added":
       if (action === "doctor_decision") {
         newData.timeline.push({
-          event: "Doctor decision completed",
+          event: "🏁 Doctor decision completed",
           timestamp: now
         });
-        return { ...newData, status: "completed" };
+
+        return {
+          ...newData,
+          status: "completed",
+          current_state: "completed"
+        };
       }
       break;
   }
 
-  // ❌ INVALID TRANSITION
+  /*
+  ========================================
+  ❌ INVALID TRANSITION
+  ========================================
+  */
+
   throw new Error(`Invalid transition: ${currentState} → ${action}`);
-    }
+            }
