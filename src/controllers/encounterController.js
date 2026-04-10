@@ -161,10 +161,50 @@ export const addSymptomsHandler = async (req, res) => {
     const record = await getEncounterDB(id);
     if (!record) return res.status(404).json({ error: "Not found" });
 
+    // 🔥 STEP 1: Extract inputs
+    const symptoms = req.body?.symptoms || req.body;
+
+    const vitals = record?.encounter_data?.vitals || {};
+
+    // 🔥 STEP 2: RUN AI HERE (EARLY TRIAGE)
+    let ai = null;
+    let finalSeverity = "LOW";
+
+    try {
+      ai = await runClinicalAI({
+        vitals,
+        symptoms
+      });
+
+      finalSeverity = ai?.severity || "LOW";
+
+    } catch (aiErr) {
+      console.warn("⚠️ AI failed, fallback to LOW:", aiErr.message);
+    }
+
+    // 🔥 STEP 3: BUILD FSM-COMPATIBLE PAYLOAD
+    const enrichedPayload = {
+      ...req.body,
+
+      triage: {
+        severity: finalSeverity,
+        source: "AI-early",
+        confidence: ai?.confidence || 0.8
+      },
+
+      ai: ai || null,
+
+      finalSeverity
+    };
+
+    console.log("🧠 AI (Symptoms Stage):", ai);
+    console.log("🔥 Final Severity:", finalSeverity);
+
+    // 🔥 STEP 4: SEND TO FSM
     const updatedData = await processCaseState(
       record,
       "symptoms",
-      req.body
+      enrichedPayload
     );
 
     const updated = await updateEncounterDB(
