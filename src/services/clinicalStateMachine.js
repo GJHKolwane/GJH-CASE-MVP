@@ -6,13 +6,12 @@ import { buildRouting } from "./routing.service.js";
 
 export function processCaseState(data = {}, action, payload = {}) {
 
-  // ✅ Unified state source
   let currentState = data.status || data.current_state || "created";
   const now = new Date().toISOString();
 
   /*
   ========================================
-  🧱 PAYLOAD NORMALIZATION (FIXED)
+  🧱 PAYLOAD NORMALIZATION
   ========================================
   */
 
@@ -34,14 +33,12 @@ export function processCaseState(data = {}, action, payload = {}) {
     };
   }
 
-  // ✅ FIXED — NO DOUBLE NESTING
   if (action === "symptoms") {
     normalizedPayload = {
       symptoms: { ...payload }
     };
   }
 
-  // ✅ FIXED — DO NOT WRAP/OVERRIDE DECISION OUTPUT
   if (action === "nurse") {
     normalizedPayload = {
       triage: { ...payload }
@@ -50,7 +47,7 @@ export function processCaseState(data = {}, action, payload = {}) {
 
   /*
   ========================================
-  📦 SINGLE SOURCE OF TRUTH (MERGE SAFE)
+  📦 MERGE STATE
   ========================================
   */
 
@@ -65,7 +62,7 @@ export function processCaseState(data = {}, action, payload = {}) {
 
   /*
   ========================================
-  🚨 HARD STATE GATES (NO SKIPPING)
+  🚨 HARD STATE GATES
   ========================================
   */
 
@@ -84,37 +81,44 @@ export function processCaseState(data = {}, action, payload = {}) {
 
   /*
   ========================================
-  🧠 DECISION ENGINE OUTPUT (SOURCE OF TRUTH)
+  🧠 DECISION ENGINE OUTPUT (STRICT)
   ========================================
   */
 
-  const severity =
-    newData.encounter_data?.finalSeverity || "LOW";
-
+  const severity = newData.encounter_data?.finalSeverity || null;
   const rules = newData.rules || {};
   const triggers = rules.triggers || [];
   const autoDecision = rules.autoDecision;
 
   /*
   ========================================
-  🚨 ESCALATION ENGINE (ALIGNED)
+  🚨 SAFE ESCALATION GUARD
   ========================================
   */
 
+  let escalation = {
+    status: false
+  };
+
+  // ✅ ONLY allow escalation AFTER symptoms stage
+  const canEscalate =
+    ["symptoms_recorded", "awaiting_clinician_validation", "validated"].includes(currentState);
+
+  if (severity && canEscalate) {
+    escalation = createEscalation({
+      finalSeverity: severity,
+      triggers,
+      vitals: newData.encounter_data?.vitals,
+      symptoms: newData.encounter_data?.symptoms
+    });
+  }
+
   const prevEscalation = data.escalation || {};
-
-  const escalation = createEscalation({
-    finalSeverity: severity,
-    triggers, // ✅ NEW
-    vitals: newData.encounter_data?.vitals,
-    symptoms: newData.encounter_data?.symptoms
-  });
-
   newData.escalation = escalation;
 
   /*
   ========================================
-  📦 ROUTING ENGINE (FIRST PASS)
+  📦 ROUTING ENGINE
   ========================================
   */
 
@@ -133,7 +137,7 @@ export function processCaseState(data = {}, action, payload = {}) {
     newData.timeline.push({
       event: `🚨 Auto escalation (${escalation.level})`,
       reason: escalation.reason,
-      triggers, // ✅ explainability
+      triggers,
       timestamp: now
     });
   }
@@ -162,31 +166,14 @@ export function processCaseState(data = {}, action, payload = {}) {
 
   /*
   ========================================
-  📦 ROUTING ENGINE (FINAL PASS)
-  ========================================
-  */
-
-  const prevQueue = data.routing?.queue;
-  const routing = buildRouting(newData);
-
-  newData.routing = routing;
-
-  if (prevQueue !== routing.queue) {
-    newData.timeline.push({
-      event: `📦 Routed to ${routing.queue}`,
-      timestamp: now
-    });
-  }
-
-  /*
-  ========================================
-  🚨 CLINICAL OVERRIDE MODE (FIXED)
+  🚨 CLINICAL OVERRIDE MODE
   ========================================
   */
 
   const forceEscalation = autoDecision === "ESCALATE";
 
   if (
+    canEscalate &&
     (forceEscalation || escalation?.status) &&
     currentState !== "doctor_escalation" &&
     currentState !== "doctor_consultation" &&
@@ -209,7 +196,7 @@ export function processCaseState(data = {}, action, payload = {}) {
 
   /*
   ========================================
-  👨‍⚕️ DOCTOR FLOW (UNCHANGED)
+  👨‍⚕️ DOCTOR FLOW
   ========================================
   */
 
@@ -244,7 +231,7 @@ export function processCaseState(data = {}, action, payload = {}) {
 
   /*
   ========================================
-  🧠 NORMAL FSM FLOW (STRICT)
+  🧠 NORMAL FSM FLOW
   ========================================
   */
 
@@ -252,104 +239,48 @@ export function processCaseState(data = {}, action, payload = {}) {
 
     case "created":
       if (action === "intake") {
-        newData.timeline.push({
-          event: "🧾 Intake completed",
-          timestamp: now
-        });
-
-        return {
-          ...newData,
-          status: "intake_completed",
-          current_state: "intake_completed"
-        };
+        newData.timeline.push({ event: "🧾 Intake completed", timestamp: now });
+        return { ...newData, status: "intake_completed", current_state: "intake_completed" };
       }
       break;
 
     case "intake_completed":
       if (action === "vitals") {
-        newData.timeline.push({
-          event: "💓 Vitals recorded",
-          timestamp: now
-        });
-
-        return {
-          ...newData,
-          status: "vitals_recorded",
-          current_state: "vitals_recorded"
-        };
+        newData.timeline.push({ event: "💓 Vitals recorded", timestamp: now });
+        return { ...newData, status: "vitals_recorded", current_state: "vitals_recorded" };
       }
       break;
 
     case "vitals_recorded":
       if (action === "symptoms") {
-        newData.timeline.push({
-          event: "🤒 Symptoms recorded",
-          timestamp: now
-        });
-
-        return {
-          ...newData,
-          status: "symptoms_recorded",
-          current_state: "symptoms_recorded"
-        };
+        newData.timeline.push({ event: "🤒 Symptoms recorded", timestamp: now });
+        return { ...newData, status: "symptoms_recorded", current_state: "symptoms_recorded" };
       }
       break;
 
     case "symptoms_recorded":
       if (action === "nurse") {
-        newData.timeline.push({
-          event: "👩‍⚕️ Nurse assessment completed",
-          timestamp: now
-        });
-
-        return {
-          ...newData,
-          status: "awaiting_clinician_validation",
-          current_state: "awaiting_clinician_validation"
-        };
+        newData.timeline.push({ event: "👩‍⚕️ Nurse assessment completed", timestamp: now });
+        return { ...newData, status: "awaiting_clinician_validation", current_state: "awaiting_clinician_validation" };
       }
       break;
 
     case "awaiting_clinician_validation":
       if (action === "validate") {
-        newData.timeline.push({
-          event: "✅ Validation completed",
-          timestamp: now
-        });
-
-        return {
-          ...newData,
-          status: "validated",
-          current_state: "validated"
-        };
+        newData.timeline.push({ event: "✅ Validation completed", timestamp: now });
+        return { ...newData, status: "validated", current_state: "validated" };
       }
       break;
 
     case "validated":
       if (action === "treat") {
-        newData.timeline.push({
-          event: "💊 Treatment applied",
-          timestamp: now
-        });
-
-        return {
-          ...newData,
-          status: "treatment_applied",
-          current_state: "treatment_applied"
-        };
+        newData.timeline.push({ event: "💊 Treatment applied", timestamp: now });
+        return { ...newData, status: "treatment_applied", current_state: "treatment_applied" };
       }
 
       if (action === "followup") {
-        newData.timeline.push({
-          event: "📅 Follow-up scheduled",
-          timestamp: now
-        });
-
-        return {
-          ...newData,
-          status: "followup_scheduled",
-          current_state: "followup_scheduled"
-        };
+        newData.timeline.push({ event: "📅 Follow-up scheduled", timestamp: now });
+        return { ...newData, status: "followup_scheduled", current_state: "followup_scheduled" };
       }
 
       if (action === "escalate") {
@@ -370,55 +301,25 @@ export function processCaseState(data = {}, action, payload = {}) {
 
     case "doctor_escalation":
       if (action === "doctor") {
-        newData.timeline.push({
-          event: "👨‍⚕️ Doctor picked case",
-          timestamp: now
-        });
-
-        return {
-          ...newData,
-          status: "doctor_consultation",
-          current_state: "doctor_consultation"
-        };
+        newData.timeline.push({ event: "👨‍⚕️ Doctor picked case", timestamp: now });
+        return { ...newData, status: "doctor_consultation", current_state: "doctor_consultation" };
       }
       break;
 
     case "doctor_consultation":
       if (action === "doctor_notes") {
-        newData.timeline.push({
-          event: "📝 Doctor notes added",
-          timestamp: now
-        });
-
-        return {
-          ...newData,
-          status: "doctor_notes_added",
-          current_state: "doctor_notes_added"
-        };
+        newData.timeline.push({ event: "📝 Doctor notes added", timestamp: now });
+        return { ...newData, status: "doctor_notes_added", current_state: "doctor_notes_added" };
       }
       break;
 
     case "doctor_notes_added":
       if (action === "doctor_decision") {
-        newData.timeline.push({
-          event: "🏁 Doctor decision completed",
-          timestamp: now
-        });
-
-        return {
-          ...newData,
-          status: "completed",
-          current_state: "completed"
-        };
+        newData.timeline.push({ event: "🏁 Doctor decision completed", timestamp: now });
+        return { ...newData, status: "completed", current_state: "completed" };
       }
       break;
   }
 
-  /*
-  ========================================
-  ❌ INVALID TRANSITION
-  ========================================
-  */
-
   throw new Error(`Invalid transition: ${currentState} → ${action}`);
-      }
+}
