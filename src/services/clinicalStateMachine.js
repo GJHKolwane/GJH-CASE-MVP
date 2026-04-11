@@ -8,12 +8,11 @@ export function processCaseState(data = {}, action, payload = {}) {
 
   // ✅ Unified state source
   let currentState = data.status || data.current_state || "created";
-
   const now = new Date().toISOString();
 
   /*
   ========================================
-  🧱 STRICT PAYLOAD NORMALIZATION
+  🧱 PAYLOAD NORMALIZATION (FIXED)
   ========================================
   */
 
@@ -22,34 +21,36 @@ export function processCaseState(data = {}, action, payload = {}) {
   if (action === "intake") {
     normalizedPayload = {
       intake: {
-        patient: payload?.intake?.patient || {},
-        medical: payload?.intake?.medical || {},
-        context: payload?.intake?.context || {}
+        patient: payload?.patient || payload?.intake?.patient || {},
+        medical: payload?.medical || payload?.intake?.medical || {},
+        context: payload?.context || payload?.intake?.context || {}
       }
     };
   }
 
   if (action === "vitals") {
     normalizedPayload = {
-      vitals: payload
+      vitals: { ...payload }
     };
   }
 
+  // ✅ FIXED — NO DOUBLE NESTING
   if (action === "symptoms") {
     normalizedPayload = {
-      symptoms: payload
+      symptoms: { ...payload }
     };
   }
 
+  // ✅ FIXED — DO NOT WRAP/OVERRIDE DECISION OUTPUT
   if (action === "nurse") {
     normalizedPayload = {
-      triage: payload
+      triage: { ...payload }
     };
   }
 
   /*
   ========================================
-  📦 SINGLE SOURCE OF TRUTH
+  📦 SINGLE SOURCE OF TRUTH (MERGE SAFE)
   ========================================
   */
 
@@ -83,19 +84,28 @@ export function processCaseState(data = {}, action, payload = {}) {
 
   /*
   ========================================
-  🚨 AUTO ESCALATION ENGINE
+  🧠 DECISION ENGINE OUTPUT (SOURCE OF TRUTH)
   ========================================
   */
 
-  const finalSeverity =
-    newData.finalSeverity ||
-    newData.encounter_data?.triage?.severity ||
-    "LOW";
+  const severity =
+    newData.encounter_data?.finalSeverity || "LOW";
+
+  const rules = newData.rules || {};
+  const triggers = rules.triggers || [];
+  const autoDecision = rules.autoDecision;
+
+  /*
+  ========================================
+  🚨 ESCALATION ENGINE (ALIGNED)
+  ========================================
+  */
 
   const prevEscalation = data.escalation || {};
 
   const escalation = createEscalation({
-    finalSeverity,
+    finalSeverity: severity,
+    triggers, // ✅ NEW
     vitals: newData.encounter_data?.vitals,
     symptoms: newData.encounter_data?.symptoms
   });
@@ -123,6 +133,7 @@ export function processCaseState(data = {}, action, payload = {}) {
     newData.timeline.push({
       event: `🚨 Auto escalation (${escalation.level})`,
       reason: escalation.reason,
+      triggers, // ✅ explainability
       timestamp: now
     });
   }
@@ -169,18 +180,26 @@ export function processCaseState(data = {}, action, payload = {}) {
 
   /*
   ========================================
-  🚨 CLINICAL OVERRIDE MODE
+  🚨 CLINICAL OVERRIDE MODE (FIXED)
   ========================================
   */
 
-  const severity = escalation?.level;
+  const forceEscalation = autoDecision === "ESCALATE";
 
   if (
-    escalation?.status &&
+    (forceEscalation || escalation?.status) &&
     currentState !== "doctor_escalation" &&
     currentState !== "doctor_consultation" &&
     action !== "doctor"
   ) {
+    newData.timeline.push({
+      event: forceEscalation
+        ? "⚠️ Rule-based forced escalation"
+        : "🚨 Escalation triggered",
+      triggers,
+      timestamp: now
+    });
+
     return {
       ...newData,
       status: "doctor_escalation",
@@ -188,36 +207,39 @@ export function processCaseState(data = {}, action, payload = {}) {
     };
   }
 
-  if (severity === "HIGH" || severity === "CRITICAL") {
+  /*
+  ========================================
+  👨‍⚕️ DOCTOR FLOW (UNCHANGED)
+  ========================================
+  */
 
-    if (action === "doctor") {
-      newData.timeline.push({
-        event: "👨‍⚕️ Doctor access (override)",
-        timestamp: now
-      });
+  if (action === "doctor") {
+    newData.timeline.push({
+      event: "👨‍⚕️ Doctor access",
+      timestamp: now
+    });
 
-      return {
-        ...newData,
-        status: "doctor_consultation",
-        current_state: "doctor_consultation"
-      };
-    }
+    return {
+      ...newData,
+      status: "doctor_consultation",
+      current_state: "doctor_consultation"
+    };
+  }
 
-    if (action === "doctor_notes") {
-      return {
-        ...newData,
-        status: "doctor_notes_added",
-        current_state: "doctor_notes_added"
-      };
-    }
+  if (action === "doctor_notes") {
+    return {
+      ...newData,
+      status: "doctor_notes_added",
+      current_state: "doctor_notes_added"
+    };
+  }
 
-    if (action === "doctor_decision") {
-      return {
-        ...newData,
-        status: "completed",
-        current_state: "completed"
-      };
-    }
+  if (action === "doctor_decision") {
+    return {
+      ...newData,
+      status: "completed",
+      current_state: "completed"
+    };
   }
 
   /*
@@ -334,6 +356,7 @@ export function processCaseState(data = {}, action, payload = {}) {
         newData.timeline.push({
           event: "🚨 Escalated to doctor",
           reason: escalation?.reason,
+          triggers,
           timestamp: now
         });
 
@@ -398,4 +421,4 @@ export function processCaseState(data = {}, action, payload = {}) {
   */
 
   throw new Error(`Invalid transition: ${currentState} → ${action}`);
-            }
+      }
