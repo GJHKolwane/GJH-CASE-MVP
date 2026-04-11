@@ -13,9 +13,12 @@ import {
 } from "../services/clinicalStateMachine.js";
 
 import {
-  evaluateRisk,
-  shouldEscalate
-} from "../engine/risk.engine.js";
+  evaluateClinicalState
+} from "../services/clinicalRulesEngine.js";
+
+import {
+  evaluateEncounter
+} from "../services/clinicalDecision.service.js";
 
 import {
   callAIOrchestrator
@@ -129,7 +132,7 @@ export const addVitalsHandler = async (req, res) => {
     const updatedData = await processCaseState(
       record,
       "vitals",
-      req.body // ✅ correct shape
+      req.body
     );
 
     const updated = await updateEncounterDB(
@@ -148,7 +151,7 @@ export const addVitalsHandler = async (req, res) => {
 
 /*
 ================================================
-SYMPTOMS
+SYMPTOMS (EARLY TRIAGE WITH RULES)
 ================================================
 */
 export const addSymptomsHandler = async (req, res) => {
@@ -161,46 +164,36 @@ export const addSymptomsHandler = async (req, res) => {
     const record = await getEncounterDB(id);
     if (!record) return res.status(404).json({ error: "Not found" });
 
-    // 🔥 STEP 1: Extract inputs
-    const symptoms = req.body?.symptoms || req.body;
+    const symptoms = Array.isArray(req.body?.symptoms)
+      ? req.body.symptoms
+      : [];
 
     const vitals = record?.encounter_data?.vitals || {};
 
-    // 🔥 STEP 2: RUN AI HERE (EARLY TRIAGE)
-    let ai = null;
-    let finalSeverity = "LOW";
+    // 🛡️ RULES ENGINE FIRST (EARLY DETECTION)
+    const rules = evaluateClinicalState({
+      vitals,
+      symptoms
+    });
 
-    try {
-      ai = await runClinicalAI({
-        vitals,
-        symptoms
-      });
+    let severity = rules.severity.toUpperCase();
 
-      finalSeverity = ai?.severity || "LOW";
-
-    } catch (aiErr) {
-      console.warn("⚠️ AI failed, fallback to LOW:", aiErr.message);
-    }
-
-    // 🔥 STEP 3: BUILD FSM-COMPATIBLE PAYLOAD
     const enrichedPayload = {
       ...req.body,
+      symptoms,
+      rules,
 
       triage: {
-        severity: finalSeverity,
-        source: "AI-early",
-        confidence: ai?.confidence || 0.8
+        severity,
+        source: "rules-early"
       },
 
-      ai: ai || null,
-
-      finalSeverity
+      finalSeverity: severity
     };
 
-    console.log("🧠 AI (Symptoms Stage):", ai);
-    console.log("🔥 Final Severity:", finalSeverity);
+    console.log("🛡️ RULES (Symptoms Stage):", rules);
+    console.log("🔥 Early Severity:", severity);
 
-    // 🔥 STEP 4: SEND TO FSM
     const updatedData = await processCaseState(
       record,
       "symptoms",
@@ -223,7 +216,7 @@ export const addSymptomsHandler = async (req, res) => {
 
 /*
 ================================================
-NURSE (AI HYBRID)
+NURSE (FULL CLINICAL DECISION ENGINE)
 ================================================
 */
 export const nurseAssessmentHandler = async (req, res) => {
@@ -242,36 +235,30 @@ export const nurseAssessmentHandler = async (req, res) => {
       req.body
     );
 
-    const now = new Date().toISOString();
+    const ed = updatedData.encounter_data;
 
-    const ai = await callAIOrchestrator({
-      inputText: req.body?.notes || "",
-      symptoms: updatedData?.encounter_data?.symptoms || [],
-      vitals: updatedData?.encounter_data?.vitals || {},
-      encounterId: id
+    // 🔥 FULL ENGINE (RULES + AI + FUSION)
+    const decision = await evaluateEncounter({
+      vitals: ed.vitals,
+      symptoms: ed.symptoms,
+      notes: req.body.notes
     });
 
-    const aiRisk = ai?.riskLevel?.toUpperCase();
-    const aiConfidence = ai?.confidence || 0;
+    const now = new Date().toISOString();
 
-    const mcpSeverity =
-      updatedData?.encounter_data?.triage?.severity || "LOW";
+    updatedData.encounter_data.rules = decision.rules;
+    updatedData.encounter_data.ai = decision.ai;
+    updatedData.encounter_data.finalSeverity = decision.finalSeverity;
 
-    let finalSeverity = mcpSeverity;
-
-    if (aiRisk === "HIGH" && aiConfidence > 0.7) {
-      if (mcpSeverity === "LOW") finalSeverity = "MEDIUM";
-      else if (mcpSeverity === "MEDIUM") finalSeverity = "HIGH";
-    }
-
-    updatedData.finalSeverity = finalSeverity;
+    updatedData.encounter_data.triage = {
+      severity: decision.finalSeverity
+    };
 
     updatedData.timeline = [
       ...(updatedData.timeline || []),
       {
-        event: "🤖 AI nurse assist + hybrid decision",
-        ai,
-        finalSeverity,
+        event: "🧠 Clinical decision engine executed",
+        decision,
         timestamp: now
       }
     ];
@@ -284,8 +271,7 @@ export const nurseAssessmentHandler = async (req, res) => {
 
     res.json({
       success: true,
-      ai,
-      finalSeverity,
+      decision,
       encounter: updated
     });
 
