@@ -35,6 +35,40 @@ const trace = (stage, id) => {
 
 /*
 ================================================
+🧠 SAFETY — ENSURE DECISION EXISTS BEFORE FSM
+================================================
+*/
+const ensureDecision = async (data) => {
+  const ed = data.encounter_data || {};
+
+  if (!ed.finalSeverity) {
+    console.log("⚠️ Missing decision → running safety decision engine");
+
+    const decision = await evaluateEncounter({
+      vitals: ed.vitals,
+      symptoms: ed.symptoms,
+      notes: ed?.triage?.notes
+    });
+
+    data.encounter_data.finalSeverity = decision.finalSeverity;
+    data.encounter_data.rules = decision.rules;
+    data.encounter_data.ai = decision.ai;
+
+    data.timeline = [
+      ...(data.timeline || []),
+      {
+        event: "🛡️ Safety decision engine executed",
+        decision,
+        timestamp: new Date().toISOString()
+      }
+    ];
+  }
+
+  return data;
+};
+
+/*
+================================================
 CREATE
 ================================================
 */
@@ -79,32 +113,18 @@ INTAKE
 export const intakeHandler = async (req, res) => {
   try {
     const { id } = req.params;
-    if (!id) return res.status(400).json({ error: "Missing encounter ID" });
 
     trace("intake", id);
 
     const record = await getEncounterDB(id);
-    if (!record) return res.status(404).json({ error: "Not found" });
-
-    const { intake } = req.body;
-
-    if (!intake) {
-      return res.status(400).json({
-        error: "Missing structured intake data"
-      });
-    }
 
     const updatedData = await processCaseState(
       record,
       "intake",
-      { intake }
+      { intake: req.body.intake }
     );
 
-    const updated = await updateEncounterDB(
-      id,
-      updatedData,
-      updatedData.status
-    );
+    const updated = await updateEncounterDB(id, updatedData, updatedData.status);
 
     res.json(updated);
 
@@ -122,12 +142,10 @@ VITALS
 export const addVitalsHandler = async (req, res) => {
   try {
     const { id } = req.params;
-    if (!id) return res.status(400).json({ error: "Missing encounter ID" });
 
     trace("vitals", id);
 
     const record = await getEncounterDB(id);
-    if (!record) return res.status(404).json({ error: "Not found" });
 
     const updatedData = await processCaseState(
       record,
@@ -135,11 +153,7 @@ export const addVitalsHandler = async (req, res) => {
       req.body
     );
 
-    const updated = await updateEncounterDB(
-      id,
-      updatedData,
-      updatedData.status
-    );
+    const updated = await updateEncounterDB(id, updatedData, updatedData.status);
 
     res.json(updated);
 
@@ -151,18 +165,16 @@ export const addVitalsHandler = async (req, res) => {
 
 /*
 ================================================
-SYMPTOMS (EARLY TRIAGE WITH RULES)
+SYMPTOMS (AI CHECKPOINT 1 — EARLY)
 ================================================
 */
 export const addSymptomsHandler = async (req, res) => {
   try {
     const { id } = req.params;
-    if (!id) return res.status(400).json({ error: "Missing encounter ID" });
 
     trace("symptoms", id);
 
     const record = await getEncounterDB(id);
-    if (!record) return res.status(404).json({ error: "Not found" });
 
     const symptoms = Array.isArray(req.body?.symptoms)
       ? req.body.symptoms
@@ -170,29 +182,32 @@ export const addSymptomsHandler = async (req, res) => {
 
     const vitals = record?.encounter_data?.vitals || {};
 
-    // 🛡️ RULES ENGINE FIRST (EARLY DETECTION)
+    // 🛡️ RULES ENGINE (EARLY SIGNAL)
     const rules = evaluateClinicalState({
       vitals,
       symptoms
     });
 
-    let severity = rules.severity.toUpperCase();
+    // 🤖 OPTIONAL AI ENRICHMENT (NON-BLOCKING)
+    let ai = null;
+    try {
+      ai = await callAIOrchestrator({
+        vitals,
+        symptoms
+      });
+    } catch (err) {
+      console.warn("AI orchestrator skipped:", err.message);
+    }
+
+    const severity = rules.severity.toUpperCase();
 
     const enrichedPayload = {
       ...req.body,
       symptoms,
       rules,
-
-      triage: {
-        severity,
-        source: "rules-early"
-      },
-
+      ai,
       finalSeverity: severity
     };
-
-    console.log("🛡️ RULES (Symptoms Stage):", rules);
-    console.log("🔥 Early Severity:", severity);
 
     const updatedData = await processCaseState(
       record,
@@ -200,11 +215,7 @@ export const addSymptomsHandler = async (req, res) => {
       enrichedPayload
     );
 
-    const updated = await updateEncounterDB(
-      id,
-      updatedData,
-      updatedData.status
-    );
+    const updated = await updateEncounterDB(id, updatedData, updatedData.status);
 
     res.json(updated);
 
@@ -216,18 +227,16 @@ export const addSymptomsHandler = async (req, res) => {
 
 /*
 ================================================
-NURSE (FULL CLINICAL DECISION ENGINE)
+NURSE (AI CHECKPOINT 2 — FULL DECISION)
 ================================================
 */
 export const nurseAssessmentHandler = async (req, res) => {
   try {
     const { id } = req.params;
-    if (!id) return res.status(400).json({ error: "Missing encounter ID" });
 
     trace("nurse", id);
 
     const record = await getEncounterDB(id);
-    if (!record) return res.status(404).json({ error: "Not found" });
 
     let updatedData = await processCaseState(
       record,
@@ -237,22 +246,19 @@ export const nurseAssessmentHandler = async (req, res) => {
 
     const ed = updatedData.encounter_data;
 
-    // 🔥 FULL ENGINE (RULES + AI + FUSION)
+    // 🔥 FULL DECISION ENGINE (RULES + AI + FUSION)
     const decision = await evaluateEncounter({
       vitals: ed.vitals,
       symptoms: ed.symptoms,
+      triage: ed.triage,
       notes: req.body.notes
     });
 
     const now = new Date().toISOString();
 
-    updatedData.encounter_data.rules = decision.rules;
-    updatedData.encounter_data.ai = decision.ai;
     updatedData.encounter_data.finalSeverity = decision.finalSeverity;
-
-    updatedData.encounter_data.triage = {
-      severity: decision.finalSeverity
-    };
+    updatedData.rules = decision.rules; // ✅ FSM expects this at root
+    updatedData.encounter_data.ai = decision.ai;
 
     updatedData.timeline = [
       ...(updatedData.timeline || []),
@@ -263,11 +269,10 @@ export const nurseAssessmentHandler = async (req, res) => {
       }
     ];
 
-    const updated = await updateEncounterDB(
-      id,
-      updatedData,
-      updatedData.status
-    );
+    // 🛡️ FINAL GUARD BEFORE RETURN (FSM already ran once)
+    updatedData = await ensureDecision(updatedData);
+
+    const updated = await updateEncounterDB(id, updatedData, updatedData.status);
 
     res.json({
       success: true,
@@ -283,7 +288,7 @@ export const nurseAssessmentHandler = async (req, res) => {
 
 /*
 ================================================
-VALIDATION
+VALIDATION (GUARDED)
 ================================================
 */
 export const validateEncounterHandler = async (req, res) => {
@@ -292,7 +297,9 @@ export const validateEncounterHandler = async (req, res) => {
 
     trace("validate", id);
 
-    const record = await getEncounterDB(id);
+    let record = await getEncounterDB(id);
+
+    record = await ensureDecision(record); // 🔥 CRITICAL
 
     const updatedData = await processCaseState(
       record,
@@ -322,7 +329,9 @@ export const decisionHandler = async (req, res) => {
 
     trace("decision", id);
 
-    const record = await getEncounterDB(id);
+    let record = await getEncounterDB(id);
+
+    record = await ensureDecision(record); // 🔥 CRITICAL
 
     let action;
 
@@ -377,7 +386,9 @@ export const doctorConsultationHandler = async (req, res) => {
 
     trace("doctor_consult", id);
 
-    const record = await getEncounterDB(id);
+    let record = await getEncounterDB(id);
+
+    record = await ensureDecision(record); // 🔥 CRITICAL
 
     const updatedData = await processCaseState(
       record,
@@ -406,7 +417,9 @@ export const doctorNotesHandler = async (req, res) => {
 
     trace("doctor_notes", id);
 
-    const record = await getEncounterDB(id);
+    let record = await getEncounterDB(id);
+
+    record = await ensureDecision(record);
 
     const updatedData = await processCaseState(
       record,
@@ -435,7 +448,9 @@ export const doctorDecisionHandler = async (req, res) => {
 
     trace("doctor_decision", id);
 
-    const record = await getEncounterDB(id);
+    let record = await getEncounterDB(id);
+
+    record = await ensureDecision(record);
 
     const updatedData = await processCaseState(
       record,
