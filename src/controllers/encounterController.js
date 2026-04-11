@@ -124,16 +124,31 @@ export const intakeHandler = async (req, res) => {
       { intake: req.body.intake }
     );
 
-    const updated = await updateEncounterDB(id, updatedData, updatedData.status);
+    const updated = await updateEncounterDB(
+      id,
+      updatedData,
+      updatedData.status
+    );
 
-    res.json(updated);
+    /*
+    ========================================
+    🔥 CRITICAL: RESPONSE NORMALIZATION
+    ========================================
+    */
+
+    return res.json({
+      encounter: {
+        id: updated.id,
+        state: (updated.status || "").toUpperCase() // 🔥 normalize
+      },
+      encounter_data: updated.encounter_data || {}
+    });
 
   } catch (err) {
     console.error("INTAKE ERROR:", err);
     res.status(400).json({ error: err.message });
   }
 };
-
 /*
 ================================================
 VITALS
