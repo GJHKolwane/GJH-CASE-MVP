@@ -1,55 +1,45 @@
 /*
 ================================================
-CLINICAL SAFETY ENGINE (PRODUCTION MVP)
-================================================
-
-PURPOSE:
-- Analyze vitals + symptoms
-- Detect life-threatening conditions
-- Assign severity
-- Trigger auto escalation when needed
-
-DESIGN:
-- Pure function (NO DB calls)
-- Deterministic + explainable
-- Extensible for future AI layer
+CLINICAL SAFETY ENGINE (UPDATED MVP)
 ================================================
 */
 
 export function evaluateClinicalState(data) {
   const vitals = data.vitals || {};
-  const symptoms = data.symptoms?.symptoms || [];
+
+  // ✅ FIXED INPUT
+  const symptoms = Array.isArray(data.symptoms)
+    ? data.symptoms
+    : [];
 
   const bp = vitals.bp || "";
-  const temp = vitals.temp || 0;
+  const temp = parseFloat(vitals.temp) || 0;
 
   let severity = "low";
   let autoDecision = null;
   let triggers = [];
 
-  // Normalize symptoms
-  const normalizedSymptoms = symptoms.map(s => s.toLowerCase());
+  // ✅ Normalize symptoms (robust matching)
+  const normalizedSymptoms = symptoms.map(s =>
+    s.toLowerCase()
+  );
 
-  const has = (symptom) => normalizedSymptoms.includes(symptom);
+  const hasAny = (keywords) =>
+    normalizedSymptoms.some(s =>
+      keywords.some(k => s.includes(k))
+    );
 
   /*
   ================================================
-  CARDIAC EMERGENCY (Heart Attack)
+  CARDIAC EMERGENCY
   ================================================
   */
-  if (has("chest pain") && has("shortness of breath")) {
+  if (
+    hasAny(["chest pain"]) &&
+    hasAny(["shortness of breath", "difficulty breathing", "breathless"])
+  ) {
     severity = "critical";
     triggers.push("cardiac_emergency");
-  }
-
-  /*
-  ================================================
-  SEPSIS (MVP RULE)
-  ================================================
-  */
-  if (temp >= 39) {
-    if (severity !== "critical") severity = "high";
-    triggers.push("possible_sepsis");
   }
 
   /*
@@ -57,7 +47,7 @@ export function evaluateClinicalState(data) {
   NEURO EMERGENCY
   ================================================
   */
-  if (has("unconscious") || has("seizure")) {
+  if (hasAny(["unconscious", "seizure", "not responding"])) {
     severity = "critical";
     triggers.push("neuro_emergency");
   }
@@ -67,24 +57,57 @@ export function evaluateClinicalState(data) {
   RESPIRATORY DISTRESS
   ================================================
   */
-  if (has("shortness of breath")) {
+  if (hasAny(["shortness of breath", "difficulty breathing", "breathless"])) {
     if (severity !== "critical") severity = "high";
     triggers.push("respiratory_distress");
   }
 
   /*
   ================================================
-  HYPERTENSIVE CRISIS
+  SEPSIS (TEMP)
   ================================================
   */
-  if (bp === "180/120") {
+  if (temp >= 39) {
     if (severity !== "critical") severity = "high";
-    triggers.push("hypertensive_crisis");
+    triggers.push("possible_sepsis");
   }
 
   /*
   ================================================
-  SAFETY ESCALATION DECISION
+  HYPERTENSIVE CRISIS (RANGE)
+  ================================================
+  */
+  if (bp.includes("/")) {
+    const [sys, dia] = bp.split("/").map(Number);
+
+    if (sys >= 180 || dia >= 120) {
+      if (severity !== "critical") severity = "high";
+      triggers.push("hypertensive_crisis");
+    }
+  }
+
+  /*
+  ================================================
+  TRAUMA / BLEEDING
+  ================================================
+  */
+  if (hasAny(["bleeding", "severe bleeding", "injury", "trauma"])) {
+    if (severity !== "critical") severity = "high";
+    triggers.push("trauma_bleeding");
+  }
+
+  /*
+  ================================================
+  PREGNANCY RISK FLAG (SUPPORTING)
+  ================================================
+  */
+  if (hasAny(["pregnant"])) {
+    triggers.push("pregnancy_flag");
+  }
+
+  /*
+  ================================================
+  ESCALATION DECISION
   ================================================
   */
   if (severity === "high" || severity === "critical") {
@@ -95,11 +118,6 @@ export function evaluateClinicalState(data) {
     };
   }
 
-  /*
-  ================================================
-  FINAL OUTPUT
-  ================================================
-  */
   return {
     severity,
     autoDecision,
