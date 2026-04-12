@@ -50,15 +50,19 @@ export function processCaseState(data = {}, action, payload = {}) {
   📦 MERGE STATE
   ========================================
   */
-
   let newData = {
-    ...data,
-    encounter_data: {
-      ...(data.encounter_data || {}),
-      ...normalizedPayload
-    },
-    timeline: [...(data.timeline || [])]
-  };
+  ...data,
+  encounter_data: {
+    ...(data.encounter_data || {}),
+    ...normalizedPayload
+  },
+  timeline: [...(data.timeline || [])]
+};
+
+// 🔥 CLEAN OLD ESCALATION
+if (newData.encounter_data?.escalation) {
+  delete newData.encounter_data.escalation;
+}
 
   /*
   ========================================
