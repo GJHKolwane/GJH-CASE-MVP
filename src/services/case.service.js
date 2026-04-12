@@ -1,75 +1,81 @@
-import { callAIOrchestrator } from "./aiOrchestrator.client.js";
-import { evaluateRisk } from "../engine/risk.engine.js";
+import { evaluateEncounter } from "./clinicalDecision.service.js";
 import { logDecision } from "./audit.service.js";
 
 export async function processCase(caseData) {
-  /*
-  ========================================
-  🧠 PREP INPUT FOR AI
-  ========================================
-  */
-  const inputText = `
-  Patient presents with:
-  Symptoms: ${JSON.stringify(caseData.symptoms || [])}
-  Vitals: ${JSON.stringify(caseData.vitals || {})}
-  `;
 
   /*
   ========================================
-  🤖 CALL AI ORCHESTRATOR
+  🧠 UNIFIED CLINICAL DECISION (SOURCE OF TRUTH)
   ========================================
   */
-  const aiResponse = await callAIOrchestrator({
-    inputText,
-    symptoms: caseData.symptoms,
+  const result = await evaluateEncounter({
     vitals: caseData.vitals,
-    encounterId: caseData.caseId, // 🔥 important mapping
-  });
-
-  /*
-  ========================================
-  🧠 MCP RISK ENGINE (FINAL AUTHORITY)
-  ========================================
-  */
-  const risk = evaluateRisk({
-    heartRate: caseData.vitals?.heartRate,
-    temperature: caseData.vitals?.temperature,
-    spo2: caseData.vitals?.spo2,
     symptoms: caseData.symptoms,
-    aiSuggestion: aiResponse?.riskLevel, // AI is advisory only
+    notes: caseData.notes
   });
+
+  const { rules, finalSeverity, ai } = result;
 
   /*
   ========================================
-  🎯 FINAL GOVERNED DECISION
+  🚦 ROUTING LOGIC (DRIVEN BY SEVERITY)
   ========================================
   */
-  const decision = {
-    decision: risk.level === "CRITICAL" ? "ESCALATE" : "MONITOR",
-    level: risk.level,
-    reason: risk.reason,
-    source: risk.source, // 🔥 shows if AI or rules influenced it
+  let routing = {
+    queue: "NORMAL",
+    priority: "NORMAL"
   };
 
+  let escalation = {
+    status: false
+  };
+
+  if (finalSeverity === "CRITICAL") {
+    routing = {
+      queue: "EMERGENCY",
+      priority: "STAT"
+    };
+
+    escalation = {
+      status: true,
+      type: "doctor_escalation",
+      reason: rules?.triggers || []
+    };
+  } else if (finalSeverity === "HIGH") {
+    routing = {
+      queue: "URGENT",
+      priority: "HIGH"
+    };
+  } else if (finalSeverity === "MEDIUM") {
+    routing = {
+      queue: "STANDARD",
+      priority: "MEDIUM"
+    };
+  }
+
   /*
   ========================================
-  🧾 AUDIT TRAIL (CRITICAL FOR MEDICAL SYSTEMS)
+  🧾 AUDIT TRAIL (MEDICAL COMPLIANCE)
   ========================================
   */
   await logDecision({
     caseId: caseData.caseId,
-    ai: aiResponse,
-    decision,
-    timestamp: new Date(),
+    ai,
+    rules,
+    finalSeverity,
+    routing,
+    escalation,
+    timestamp: new Date()
   });
 
   /*
   ========================================
-  📦 FINAL RESPONSE
+  📦 FINAL RESPONSE (SYSTEM ALIGNED)
   ========================================
   */
   return {
-    ai: aiResponse,
-    decision,
+    ...result,
+    routing,
+    escalation
   };
-}
+    }
