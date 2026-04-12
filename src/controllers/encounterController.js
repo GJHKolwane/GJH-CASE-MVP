@@ -184,8 +184,6 @@ SYMPTOMS (AI CHECKPOINT 1 — EARLY)
 ================================================
 */
 
-import { evaluateEncounter } from "../services/clinicalDecision.service.js";
-
 export const addSymptomsHandler = async (req, res) => {
   try {
     const { id } = req.params;
