@@ -13,16 +13,8 @@ import {
 } from "../services/clinicalStateMachine.js";
 
 import {
-  evaluateClinicalState
-} from "../services/clinicalRulesEngine.js";
-
-import {
   evaluateEncounter
 } from "../services/clinicalDecision.service.js";
-
-import {
-  callAIOrchestrator
-} from "../services/aiOrchestrator.client.js";
 
 /*
 ================================================
@@ -35,15 +27,42 @@ const trace = (stage, id) => {
 
 /*
 ================================================
-🧠 SAFETY — ENSURE DECISION EXISTS BEFORE FSM
+🧼 RESPONSE SANITIZER (CRITICAL)
+================================================
+*/
+const sanitizeResponse = (data) => {
+  const clean = { ...data };
+
+  if (clean.encounter_data) {
+    delete clean.encounter_data.routing;
+    delete clean.encounter_data.escalation;
+  }
+
+  return clean;
+};
+
+/*
+================================================
+🧼 PRE-DB CLEANER
+================================================
+*/
+const cleanBeforeSave = (data) => {
+  if (data.encounter_data) {
+    delete data.encounter_data.routing;
+    delete data.encounter_data.escalation;
+  }
+  return data;
+};
+
+/*
+================================================
+🧠 SAFETY DECISION GUARD
 ================================================
 */
 const ensureDecision = async (data) => {
   const ed = data.encounter_data || {};
 
   if (!ed.finalSeverity) {
-    console.log("⚠️ Missing decision → running safety decision engine");
-
     const decision = await evaluateEncounter({
       vitals: ed.vitals,
       symptoms: ed.symptoms,
@@ -51,8 +70,8 @@ const ensureDecision = async (data) => {
     });
 
     data.encounter_data.finalSeverity = decision.finalSeverity;
-    data.encounter_data.rules = decision.rules;
     data.encounter_data.ai = decision.ai;
+    data.rules = decision.rules;
 
     data.timeline = [
       ...(data.timeline || []),
@@ -97,7 +116,7 @@ export const createEncounterHandler = async (req, res) => {
 
     trace("create", encounter.id);
 
-    res.json(encounter);
+    res.json(sanitizeResponse(encounter));
 
   } catch (err) {
     console.error("CREATE ENCOUNTER ERROR:", err);
@@ -124,31 +143,18 @@ export const intakeHandler = async (req, res) => {
       { intake: req.body.intake }
     );
 
-    const updated = await updateEncounterDB(
-      id,
-      updatedData,
-      updatedData.status
-    );
+    const cleaned = cleanBeforeSave(updatedData);
 
-    /*
-    ========================================
-    🔥 CRITICAL: RESPONSE NORMALIZATION
-    ========================================
-    */
+    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
 
-    return res.json({
-      encounter: {
-        id: updated.id,
-        state: (updated.status || "").toUpperCase() // 🔥 normalize
-      },
-      encounter_data: updated.encounter_data || {}
-    });
+    return res.json(sanitizeResponse(updated));
 
   } catch (err) {
     console.error("INTAKE ERROR:", err);
     res.status(400).json({ error: err.message });
   }
 };
+
 /*
 ================================================
 VITALS
@@ -162,15 +168,13 @@ export const addVitalsHandler = async (req, res) => {
 
     const record = await getEncounterDB(id);
 
-    const updatedData = await processCaseState(
-      record,
-      "vitals",
-      req.body
-    );
+    const updatedData = await processCaseState(record, "vitals", req.body);
 
-    const updated = await updateEncounterDB(id, updatedData, updatedData.status);
+    const cleaned = cleanBeforeSave(updatedData);
 
-    res.json(updated);
+    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
+
+    res.json(sanitizeResponse(updated));
 
   } catch (err) {
     console.error("VITALS ERROR:", err);
@@ -180,10 +184,9 @@ export const addVitalsHandler = async (req, res) => {
 
 /*
 ================================================
-SYMPTOMS (AI CHECKPOINT 1 — EARLY)
+SYMPTOMS (NO ROUTING HERE ❌)
 ================================================
 */
-
 export const addSymptomsHandler = async (req, res) => {
   try {
     const { id } = req.params;
@@ -196,17 +199,11 @@ export const addSymptomsHandler = async (req, res) => {
       ? req.body.symptoms
       : [];
 
-    // 🔥 NORMALIZE VITALS (CRITICAL FIX)
     const rawVitals = record?.encounter_data?.vitals || {};
     const normalizedVitals = rawVitals?.vitals || rawVitals;
 
     const notes = record?.encounter_data?.notes || "";
 
-    /*
-    ========================================
-    🧠 UNIFIED CLINICAL DECISION (SOURCE OF TRUTH)
-    ========================================
-    */
     const result = await evaluateEncounter({
       vitals: normalizedVitals,
       symptoms,
@@ -215,55 +212,11 @@ export const addSymptomsHandler = async (req, res) => {
 
     const { rules, ai, finalSeverity } = result;
 
-    /*
-    ========================================
-    🚑 ROUTING + ESCALATION (CRITICAL FIX)
-    ========================================
-    */
-    let routing = {
-      queue: "NORMAL",
-      priority: "NORMAL"
-    };
-
-    let escalation = {
-      status: false
-    };
-
-    if (finalSeverity === "CRITICAL") {
-      routing = {
-        queue: "EMERGENCY",
-        priority: "STAT"
-      };
-
-      escalation = {
-        status: true,
-        type: "doctor_escalation",
-        reason: rules?.triggers || []
-      };
-    } else if (finalSeverity === "HIGH") {
-      routing = {
-        queue: "URGENT",
-        priority: "HIGH"
-      };
-    } else if (finalSeverity === "MEDIUM") {
-      routing = {
-        queue: "STANDARD",
-        priority: "MEDIUM"
-      };
-    }
-
-    /*
-    ========================================
-    📦 PAYLOAD FOR FSM
-    ========================================
-    */
     const enrichedPayload = {
       symptoms,
       rules,
       ai,
-      finalSeverity,
-      routing,
-      escalation
+      finalSeverity
     };
 
     const updatedData = await processCaseState(
@@ -272,13 +225,11 @@ export const addSymptomsHandler = async (req, res) => {
       enrichedPayload
     );
 
-    const updated = await updateEncounterDB(
-      id,
-      updatedData,
-      updatedData.status
-    );
+    const cleaned = cleanBeforeSave(updatedData);
 
-    res.json(updated);
+    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
+
+    res.json(sanitizeResponse(updated));
 
   } catch (err) {
     console.error("SYMPTOMS ERROR:", err);
@@ -288,7 +239,7 @@ export const addSymptomsHandler = async (req, res) => {
 
 /*
 ================================================
-NURSE (AI CHECKPOINT 2 — FULL DECISION)
+NURSE
 ================================================
 */
 export const nurseAssessmentHandler = async (req, res) => {
@@ -297,17 +248,12 @@ export const nurseAssessmentHandler = async (req, res) => {
 
     trace("nurse", id);
 
-    const record = await getEncounterDB(id);
+    let record = await getEncounterDB(id);
 
-    let updatedData = await processCaseState(
-      record,
-      "nurse",
-      req.body
-    );
+    let updatedData = await processCaseState(record, "nurse", req.body);
 
     const ed = updatedData.encounter_data;
 
-    // 🔥 FULL DECISION ENGINE (RULES + AI + FUSION)
     const decision = await evaluateEncounter({
       vitals: ed.vitals,
       symptoms: ed.symptoms,
@@ -315,30 +261,29 @@ export const nurseAssessmentHandler = async (req, res) => {
       notes: req.body.notes
     });
 
-    const now = new Date().toISOString();
-
     updatedData.encounter_data.finalSeverity = decision.finalSeverity;
-    updatedData.rules = decision.rules; // ✅ FSM expects this at root
     updatedData.encounter_data.ai = decision.ai;
+    updatedData.rules = decision.rules;
 
     updatedData.timeline = [
       ...(updatedData.timeline || []),
       {
         event: "🧠 Clinical decision engine executed",
         decision,
-        timestamp: now
+        timestamp: new Date().toISOString()
       }
     ];
 
-    // 🛡️ FINAL GUARD BEFORE RETURN (FSM already ran once)
     updatedData = await ensureDecision(updatedData);
 
-    const updated = await updateEncounterDB(id, updatedData, updatedData.status);
+    const cleaned = cleanBeforeSave(updatedData);
+
+    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
 
     res.json({
       success: true,
       decision,
-      encounter: updated
+      encounter: sanitizeResponse(updated)
     });
 
   } catch (err) {
@@ -349,7 +294,7 @@ export const nurseAssessmentHandler = async (req, res) => {
 
 /*
 ================================================
-VALIDATION (GUARDED)
+VALIDATION
 ================================================
 */
 export const validateEncounterHandler = async (req, res) => {
@@ -360,17 +305,15 @@ export const validateEncounterHandler = async (req, res) => {
 
     let record = await getEncounterDB(id);
 
-    record = await ensureDecision(record); // 🔥 CRITICAL
+    record = await ensureDecision(record);
 
-    const updatedData = await processCaseState(
-      record,
-      "validate",
-      req.body
-    );
+    const updatedData = await processCaseState(record, "validate", req.body);
 
-    const updated = await updateEncounterDB(id, updatedData, updatedData.status);
+    const cleaned = cleanBeforeSave(updatedData);
 
-    res.json(updated);
+    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
+
+    res.json(sanitizeResponse(updated));
 
   } catch (err) {
     console.error("VALIDATION ERROR:", err);
@@ -392,7 +335,7 @@ export const decisionHandler = async (req, res) => {
 
     let record = await getEncounterDB(id);
 
-    record = await ensureDecision(record); // 🔥 CRITICAL
+    record = await ensureDecision(record);
 
     let action;
 
@@ -400,39 +343,17 @@ export const decisionHandler = async (req, res) => {
     else if (type === "followup_scheduled") action = "followup";
     else action = "treat";
 
-    const updatedData = await processCaseState(
-      record,
-      action,
-      req.body
-    );
+    const updatedData = await processCaseState(record, action, req.body);
 
-    const updated = await updateEncounterDB(id, updatedData, updatedData.status);
+    const cleaned = cleanBeforeSave(updatedData);
 
-    res.json(updated);
+    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
+
+    res.json(sanitizeResponse(updated));
 
   } catch (err) {
     console.error("DECISION ERROR:", err);
     res.status(400).json({ error: err.message });
-  }
-};
-
-/*
-================================================
-GET
-================================================
-*/
-export const getEncounterHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    trace("get", id);
-
-    const record = await getEncounterDB(id);
-
-    res.json(record);
-
-  } catch (err) {
-    res.status(500).json({ error: "Fetch failed" });
   }
 };
 
@@ -449,17 +370,15 @@ export const doctorConsultationHandler = async (req, res) => {
 
     let record = await getEncounterDB(id);
 
-    record = await ensureDecision(record); // 🔥 CRITICAL
+    record = await ensureDecision(record);
 
-    const updatedData = await processCaseState(
-      record,
-      "doctor",
-      {}
-    );
+    const updatedData = await processCaseState(record, "doctor", {});
 
-    const updated = await updateEncounterDB(id, updatedData, updatedData.status);
+    const cleaned = cleanBeforeSave(updatedData);
 
-    res.json(updated);
+    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
+
+    res.json(sanitizeResponse(updated));
 
   } catch (err) {
     console.error("DOCTOR CONSULT ERROR:", err);
@@ -488,9 +407,11 @@ export const doctorNotesHandler = async (req, res) => {
       req.body
     );
 
-    const updated = await updateEncounterDB(id, updatedData, updatedData.status);
+    const cleaned = cleanBeforeSave(updatedData);
 
-    res.json(updated);
+    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
+
+    res.json(sanitizeResponse(updated));
 
   } catch (err) {
     console.error("DOCTOR NOTES ERROR:", err);
@@ -519,13 +440,35 @@ export const doctorDecisionHandler = async (req, res) => {
       req.body
     );
 
-    const updated = await updateEncounterDB(id, updatedData, updatedData.status);
+    const cleaned = cleanBeforeSave(updatedData);
 
-    res.json(updated);
+    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
+
+    res.json(sanitizeResponse(updated));
 
   } catch (err) {
     console.error("DOCTOR DECISION ERROR:", err);
     res.status(400).json({ error: err.message });
+  }
+};
+
+/*
+================================================
+GET
+================================================
+*/
+export const getEncounterHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    trace("get", id);
+
+    const record = await getEncounterDB(id);
+
+    res.json(sanitizeResponse(record));
+
+  } catch (err) {
+    res.status(500).json({ error: "Fetch failed" });
   }
 };
 
