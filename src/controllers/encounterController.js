@@ -183,6 +183,9 @@ export const addVitalsHandler = async (req, res) => {
 SYMPTOMS (AI CHECKPOINT 1 — EARLY)
 ================================================
 */
+
+import { evaluateEncounter } from "../services/clinicalDecision.service.js";
+
 export const addSymptomsHandler = async (req, res) => {
   try {
     const { id } = req.params;
@@ -195,33 +198,74 @@ export const addSymptomsHandler = async (req, res) => {
       ? req.body.symptoms
       : [];
 
-    const vitals = record?.encounter_data?.vitals || {};
+    // 🔥 NORMALIZE VITALS (CRITICAL FIX)
+    const rawVitals = record?.encounter_data?.vitals || {};
+    const normalizedVitals = rawVitals?.vitals || rawVitals;
 
-    // 🛡️ RULES ENGINE (EARLY SIGNAL)
-    const rules = evaluateClinicalState({
-      vitals,
-      symptoms
+    const notes = record?.encounter_data?.notes || "";
+
+    /*
+    ========================================
+    🧠 UNIFIED CLINICAL DECISION (SOURCE OF TRUTH)
+    ========================================
+    */
+    const result = await evaluateEncounter({
+      vitals: normalizedVitals,
+      symptoms,
+      notes
     });
 
-    // 🤖 OPTIONAL AI ENRICHMENT (NON-BLOCKING)
-    let ai = null;
-    try {
-      ai = await callAIOrchestrator({
-        vitals,
-        symptoms
-      });
-    } catch (err) {
-      console.warn("AI orchestrator skipped:", err.message);
+    const { rules, ai, finalSeverity } = result;
+
+    /*
+    ========================================
+    🚑 ROUTING + ESCALATION (CRITICAL FIX)
+    ========================================
+    */
+    let routing = {
+      queue: "NORMAL",
+      priority: "NORMAL"
+    };
+
+    let escalation = {
+      status: false
+    };
+
+    if (finalSeverity === "CRITICAL") {
+      routing = {
+        queue: "EMERGENCY",
+        priority: "STAT"
+      };
+
+      escalation = {
+        status: true,
+        type: "doctor_escalation",
+        reason: rules?.triggers || []
+      };
+    } else if (finalSeverity === "HIGH") {
+      routing = {
+        queue: "URGENT",
+        priority: "HIGH"
+      };
+    } else if (finalSeverity === "MEDIUM") {
+      routing = {
+        queue: "STANDARD",
+        priority: "MEDIUM"
+      };
     }
 
-    const severity = rules.severity.toUpperCase();
-
+    /*
+    ========================================
+    📦 PAYLOAD FOR FSM
+    ========================================
+    */
     const enrichedPayload = {
-      ...req.body,
       symptoms,
       rules,
       ai,
-      finalSeverity: severity
+      finalSeverity,
+      routing,
+      escalation
     };
 
     const updatedData = await processCaseState(
@@ -230,7 +274,11 @@ export const addSymptomsHandler = async (req, res) => {
       enrichedPayload
     );
 
-    const updated = await updateEncounterDB(id, updatedData, updatedData.status);
+    const updated = await updateEncounterDB(
+      id,
+      updatedData,
+      updatedData.status
+    );
 
     res.json(updated);
 
