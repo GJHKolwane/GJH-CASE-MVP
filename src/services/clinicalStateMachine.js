@@ -35,7 +35,9 @@ export function processCaseState(data = {}, action, payload = {}) {
 
   if (action === "symptoms") {
     normalizedPayload = {
-      symptoms: { ...payload }
+      symptoms: payload.symptoms || [],
+      rules: payload.rules || {},
+      ai: payload.ai || {}
     };
   }
 
@@ -51,18 +53,35 @@ export function processCaseState(data = {}, action, payload = {}) {
   ========================================
   */
   let newData = {
-  ...data,
-  encounter_data: {
-    ...(data.encounter_data || {}),
-    ...normalizedPayload
-  },
-  timeline: [...(data.timeline || [])]
-};
+    ...data,
+    encounter_data: {
+      ...(data.encounter_data || {}),
+      ...normalizedPayload
+    },
+    timeline: [...(data.timeline || [])]
+  };
 
-// 🔥 CLEAN OLD ESCALATION
-if (newData.encounter_data?.escalation) {
-  delete newData.encounter_data.escalation;
-}
+  /*
+  ========================================
+  🔥 STORE FINAL SEVERITY (SOURCE OF TRUTH)
+  ========================================
+  */
+  if (payload.finalSeverity) {
+    newData.encounter_data.finalSeverity = payload.finalSeverity;
+  }
+
+  /*
+  ========================================
+  🧹 CLEAN CONTAMINATION
+  ========================================
+  */
+  if (newData.encounter_data?.routing) {
+    delete newData.encounter_data.routing;
+  }
+
+  if (newData.encounter_data?.escalation) {
+    delete newData.encounter_data.escalation;
+  }
 
   /*
   ========================================
@@ -85,20 +104,21 @@ if (newData.encounter_data?.escalation) {
 
   /*
   ========================================
-  🧠 DECISION ENGINE OUTPUT (FIXED SOURCE)
+  🧠 SINGLE SOURCE: SEVERITY
   ========================================
   */
+  const severity =
+    payload.finalSeverity ||
+    newData.encounter_data?.finalSeverity ||
+    null;
 
-  const symptomData = newData.encounter_data?.symptoms || {};
-
-  const severity = symptomData.finalSeverity || null;
-  const rules = symptomData.rules || {};
+  const rules = payload.rules || {};
   const triggers = rules.triggers || [];
   const autoDecision = rules.autoDecision;
 
   /*
   ========================================
-  🚨 SAFE ESCALATION GUARD
+  🚨 ESCALATION ENGINE
   ========================================
   */
 
@@ -119,18 +139,16 @@ if (newData.encounter_data?.escalation) {
   }
 
   const prevEscalation = data.escalation || {};
-
-  // ✅ DO NOT OVERRIDE CONTROLLER DECISION
-  newData.escalation = payload.escalation || escalation;
+  newData.escalation = escalation;
 
   /*
   ========================================
-  📦 ROUTING ENGINE (FIXED)
+  📦 ROUTING ENGINE (SINGLE SOURCE)
   ========================================
   */
-
-  // ✅ DO NOT OVERRIDE CONTROLLER ROUTING
-  newData.routing = payload.routing || buildRouting(newData);
+  if (severity) {
+    newData.routing = buildRouting(severity);
+  }
 
   /*
   ========================================
@@ -330,4 +348,4 @@ if (newData.encounter_data?.escalation) {
   }
 
   throw new Error(`Invalid transition: ${currentState} → ${action}`);
-    }
+      }
