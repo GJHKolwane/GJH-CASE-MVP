@@ -81,12 +81,14 @@ export function processCaseState(data = {}, action, payload = {}) {
 
   /*
   ========================================
-  🧠 DECISION ENGINE OUTPUT (STRICT)
+  🧠 DECISION ENGINE OUTPUT (FIXED SOURCE)
   ========================================
   */
 
-  const severity = newData.encounter_data?.finalSeverity || null;
-  const rules = newData.rules || {};
+  const symptomData = newData.encounter_data?.symptoms || {};
+
+  const severity = symptomData.finalSeverity || null;
+  const rules = symptomData.rules || {};
   const triggers = rules.triggers || [];
   const autoDecision = rules.autoDecision;
 
@@ -100,7 +102,6 @@ export function processCaseState(data = {}, action, payload = {}) {
     status: false
   };
 
-  // ✅ ONLY allow escalation AFTER symptoms stage
   const canEscalate =
     ["symptoms_recorded", "awaiting_clinician_validation", "validated"].includes(currentState);
 
@@ -114,15 +115,18 @@ export function processCaseState(data = {}, action, payload = {}) {
   }
 
   const prevEscalation = data.escalation || {};
-  newData.escalation = escalation;
+
+  // ✅ DO NOT OVERRIDE CONTROLLER DECISION
+  newData.escalation = payload.escalation || escalation;
 
   /*
   ========================================
-  📦 ROUTING ENGINE
+  📦 ROUTING ENGINE (FIXED)
   ========================================
   */
 
-  newData.routing = buildRouting(newData);
+  // ✅ DO NOT OVERRIDE CONTROLLER ROUTING
+  newData.routing = payload.routing || buildRouting(newData);
 
   /*
   ========================================
@@ -131,12 +135,12 @@ export function processCaseState(data = {}, action, payload = {}) {
   */
 
   if (
-    escalation.status &&
-    (!prevEscalation.status || prevEscalation.level !== escalation.level)
+    newData.escalation?.status &&
+    (!prevEscalation.status || prevEscalation.level !== newData.escalation.level)
   ) {
     newData.timeline.push({
-      event: `🚨 Auto escalation (${escalation.level})`,
-      reason: escalation.reason,
+      event: `🚨 Auto escalation (${newData.escalation.level || "critical"})`,
+      reason: newData.escalation.reason,
       triggers,
       timestamp: now
     });
@@ -148,9 +152,9 @@ export function processCaseState(data = {}, action, payload = {}) {
   ========================================
   */
 
-  if (escalation.status && !newData.doctor) {
+  if (newData.escalation?.status && !newData.doctor) {
     const doctor = assignDoctor({
-      escalation,
+      escalation: newData.escalation,
       caseId: newData.id || "unknown"
     });
 
@@ -174,7 +178,7 @@ export function processCaseState(data = {}, action, payload = {}) {
 
   if (
     canEscalate &&
-    (forceEscalation || escalation?.status) &&
+    (forceEscalation || newData.escalation?.status) &&
     currentState !== "doctor_escalation" &&
     currentState !== "doctor_consultation" &&
     action !== "doctor"
@@ -286,7 +290,7 @@ export function processCaseState(data = {}, action, payload = {}) {
       if (action === "escalate") {
         newData.timeline.push({
           event: "🚨 Escalated to doctor",
-          reason: escalation?.reason,
+          reason: newData.escalation?.reason,
           triggers,
           timestamp: now
         });
@@ -322,4 +326,4 @@ export function processCaseState(data = {}, action, payload = {}) {
   }
 
   throw new Error(`Invalid transition: ${currentState} → ${action}`);
-}
+    }
