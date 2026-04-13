@@ -281,6 +281,58 @@ export const nurseAssessmentHandler = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
+/*
+================================================
+SYSTEM DECISION (AI + NURSE → ESCALATION CONTROL)
+================================================
+*/
+export const decisionHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { type } = req.body;
+
+    trace("decision", id);
+
+    let record = await getEncounterDB(id);
+
+    if (!record) {
+      return res.status(404).json({ error: "Encounter not found" });
+    }
+
+    // Ensure AI decision exists
+    record = await ensureDecision(record);
+
+    let action;
+
+    if (type === "doctor_escalation") action = "escalate";
+    else if (type === "followup_scheduled") action = "followup";
+    else action = "treat";
+
+    const updatedData = await processCaseState(
+      record,
+      action,
+      req.body
+    );
+
+    const cleaned = cleanBeforeSave(updatedData);
+
+    const updated = await updateEncounterDB(
+      id,
+      cleaned,
+      cleaned.status
+    );
+
+    return res.json({
+      status: updated.status,
+      encounter: sanitizeResponse(updated)
+    });
+
+  } catch (err) {
+    console.error("DECISION ERROR:", err);
+    return res.status(400).json({ error: err.message });
+  }
+};
+
 
 /*
 ================================================
