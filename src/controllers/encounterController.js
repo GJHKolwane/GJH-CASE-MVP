@@ -130,6 +130,8 @@ INTAKE
 ================================================
 */
 export const intakeHandler = async (req, res) => {
+
+  export const intakeHandler = async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -147,7 +149,13 @@ export const intakeHandler = async (req, res) => {
 
     const updated = await updateEncounterDB(id, cleaned, cleaned.status);
 
-    return res.json(sanitizeResponse(updated));
+    // 🔥 FIX STARTS HERE
+    const response = sanitizeResponse(updated);
+
+    return res.json({
+      status: response.status,   // ✅ CRITICAL
+      encounter: response        // ✅ FULL DATA
+    });
 
   } catch (err) {
     console.error("INTAKE ERROR:", err);
