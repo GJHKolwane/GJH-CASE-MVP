@@ -316,6 +316,53 @@ export const assignDoctorHandler = async (req, res) => {
 
 /*
 ================================================
+DECISION (🔥 REQUIRED FOR ROUTES)
+================================================
+*/
+export const decisionHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { type } = req.body;
+
+    trace("decision", id);
+
+    let record = await getEncounterDB(id);
+
+    record = await ensureDecision(record);
+
+    let action;
+
+    if (type === "doctor_escalation") action = "escalate";
+    else if (type === "followup_scheduled") action = "followup";
+    else action = "treat";
+
+    const updatedData = await processCaseState(
+      record,
+      action,
+      req.body
+    );
+
+    const cleaned = cleanBeforeSave(updatedData);
+
+    const updated = await updateEncounterDB(
+      id,
+      cleaned,
+      cleaned.status
+    );
+
+    return res.json({
+      status: updated.status,
+      encounter: sanitizeResponse(updated)
+    });
+
+  } catch (err) {
+    console.error("DECISION ERROR:", err);
+    res.status(400).json({ error: err.message });
+  }
+};
+
+/*
+================================================
 GET
 ================================================
 */
