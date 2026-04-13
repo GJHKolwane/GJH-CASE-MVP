@@ -1,62 +1,60 @@
 // src/services/routing.service.js
 
+/*
+================================================
+🚦 ROUTING ENGINE (FINAL — PURE + SAFE)
+================================================
+*/
+
 /**
- * Determines which queue a case belongs to
+ * Determine queue from severity ONLY
  */
-export function determineQueue(caseData = {}) {
+export function determineQueue(severity = "LOW") {
 
-  const severity =
-    caseData?.finalSeverity ||
-    caseData?.encounter_data?.triage?.severity ||
-    "LOW";
+  switch (severity) {
 
-  const isEscalated = caseData?.status === "doctor_escalation";
+    case "CRITICAL":
+      return "EMERGENCY";
 
-  /*
-  ========================================
-  🚨 CRITICAL ALWAYS WINS
-  ========================================
-  */
-  if (severity === "CRITICAL") {
-    return "CRITICAL_QUEUE";
+    case "HIGH":
+      return "URGENT";
+
+    case "MEDIUM":
+      return "STANDARD";
+
+    case "LOW":
+    default:
+      return "NORMAL";
   }
-
-  /*
-  ========================================
-  ⚠️ HIGH OR ESCALATED
-  ========================================
-  */
-  if (severity === "HIGH" || isEscalated) {
-    return "HIGH_PRIORITY";
-  }
-
-  /*
-  ========================================
-  🟡 NORMAL FLOW
-  ========================================
-  */
-  return "NORMAL";
 }
 
 
 /**
- * Builds routing object
+ * Build routing (PURE FUNCTION)
  */
-export function buildRouting(caseData = {}) {
+export function buildRouting(severity = "LOW") {
 
-  const queue = determineQueue(caseData);
+  const queue = determineQueue(severity);
 
   let priority = "NORMAL";
 
-  /*
-  ========================================
-  PRIORITY MAPPING
-  ========================================
-  */
-  if (queue === "CRITICAL_QUEUE") {
-    priority = "URGENT";
-  } else if (queue === "HIGH_PRIORITY") {
-    priority = "HIGH";
+  switch (severity) {
+
+    case "CRITICAL":
+      priority = "STAT";
+      break;
+
+    case "HIGH":
+      priority = "HIGH";
+      break;
+
+    case "MEDIUM":
+      priority = "MEDIUM";
+      break;
+
+    case "LOW":
+    default:
+      priority = "NORMAL";
   }
 
   return {
@@ -68,40 +66,34 @@ export function buildRouting(caseData = {}) {
 
 
 /**
- * Groups cases into queues (for dashboard)
+ * Grouping (for dashboards)
  */
 export function groupCasesByQueue(cases = []) {
 
-  const CRITICAL_QUEUE = [];
-  const HIGH_PRIORITY = [];
+  const EMERGENCY = [];
+  const URGENT = [];
+  const STANDARD = [];
   const NORMAL = [];
 
   for (const c of cases) {
 
     const severity =
+      c?.encounter_data?.finalSeverity ||
       c?.finalSeverity ||
-      c?.encounter_data?.triage?.severity ||
       "LOW";
 
-    const isEscalated = c?.status === "doctor_escalation";
+    const queue = determineQueue(severity);
 
-    /*
-    ========================================
-    GROUPING LOGIC
-    ========================================
-    */
-    if (severity === "CRITICAL") {
-      CRITICAL_QUEUE.push(c);
-    } else if (severity === "HIGH" || isEscalated) {
-      HIGH_PRIORITY.push(c);
-    } else {
-      NORMAL.push(c);
-    }
+    if (queue === "EMERGENCY") EMERGENCY.push(c);
+    else if (queue === "URGENT") URGENT.push(c);
+    else if (queue === "STANDARD") STANDARD.push(c);
+    else NORMAL.push(c);
   }
 
   return {
-    CRITICAL_QUEUE,
-    HIGH_PRIORITY,
+    EMERGENCY,
+    URGENT,
+    STANDARD,
     NORMAL
   };
 }
