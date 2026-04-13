@@ -9,14 +9,12 @@ HELPERS
 ================================================
 */
 
-// Validate UUID format
 function isUUID(id) {
   const uuidRegex =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   return uuidRegex.test(id);
 }
 
-// Ensure JSON object
 function ensureObject(data) {
   if (!data || typeof data !== "object") return {};
   return data;
@@ -24,21 +22,20 @@ function ensureObject(data) {
 
 /*
 ================================================
-🧼 CORE SANITIZER (DB FIREWALL)
+🧼 SANITIZER (STORAGE FIREWALL)
 ================================================
 */
 function sanitizeEncounterData(data) {
   const clean = ensureObject(data);
 
-  // 🔥 HARD DELETE — NEVER STORE THESE
+  // ✅ Only clean INSIDE encounter_data (correct layer)
   if (clean.encounter_data) {
     delete clean.encounter_data.routing;
     delete clean.encounter_data.escalation;
   }
 
-  // 🔥 ALSO CLEAN ROOT (DEFENSIVE)
-  delete clean.routing;
-  delete clean.escalation;
+  // ❗ DO NOT delete root routing/escalation anymore
+  // They belong to RESPONSE layer
 
   return clean;
 }
@@ -111,7 +108,6 @@ export async function getEncounterDB(id) {
 
     if (!res.rows[0]) return null;
 
-    // 🔥 DEFENSIVE CLEAN ON READ
     return sanitizeEncounterData(res.rows[0]);
 
   } catch (err) {
@@ -122,7 +118,7 @@ export async function getEncounterDB(id) {
 
 /*
 ================================================
-UPDATE (CRITICAL FIX)
+UPDATE (FINAL FIX)
 ================================================
 */
 export async function updateEncounterDB(id, data, status) {
@@ -133,7 +129,7 @@ export async function updateEncounterDB(id, data, status) {
 
     const safeData = ensureObject(data);
 
-    // 🔥🔥🔥 CRITICAL: SANITIZE BEFORE SAVE
+    // 🔥 SANITIZE FOR STORAGE ONLY
     const cleanData = sanitizeEncounterData(safeData);
 
     const res = await query(
@@ -155,8 +151,15 @@ export async function updateEncounterDB(id, data, status) {
       return null;
     }
 
-    // 🔥 DEFENSIVE CLEAN ON RETURN
-    return sanitizeEncounterData(res.rows[0]);
+    const dbRecord = sanitizeEncounterData(res.rows[0]);
+
+    // 🔥 CRITICAL: RE-ATTACH COMPUTED FIELDS (NOT STORED)
+    return {
+      ...dbRecord,
+      routing: data.routing || null,
+      escalation: data.escalation || null,
+      doctor: data.doctor || null
+    };
 
   } catch (err) {
     console.error("❌ DB UPDATE ERROR:", err);
@@ -166,7 +169,7 @@ export async function updateEncounterDB(id, data, status) {
 
 /*
 ================================================
-PATCH FIELD (SAFE)
+PATCH FIELD
 ================================================
 */
 export async function patchEncounterField(id, field, value) {
@@ -244,4 +247,4 @@ export async function checkDBConnection() {
     console.error("❌ DB CONNECTION ERROR:", err);
     throw err;
   }
-      }
+}
