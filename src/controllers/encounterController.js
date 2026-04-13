@@ -359,45 +359,75 @@ export const doctorConsultationHandler = async (req, res) => {
 DECISION (🔥 REQUIRED FOR ROUTES)
 ================================================
 */
-export const decisionHandler = async (req, res) => {
+export const doctorDecisionHandler = async (req, res) => {
   try {
     const { id } = req.params;
-    const { type } = req.body;
+    const { decision, notes } = req.body;
 
-    trace("decision", id);
+    trace("doctor-decision", id);
 
+    // 1. Get encounter
     let record = await getEncounterDB(id);
 
+    if (!record) {
+      return res.status(404).json({ error: "Encounter not found" });
+    }
+
+    // 2. Ensure AI + prior decision integrity
     record = await ensureDecision(record);
 
+    // 3. Map doctor decision → FSM action
     let action;
 
-    if (type === "doctor_escalation") action = "escalate";
-    else if (type === "followup_scheduled") action = "followup";
-    else action = "treat";
+    switch (decision) {
+      case "escalate":
+        action = "escalate";
+        break;
+      case "followup":
+        action = "followup";
+        break;
+      case "treat":
+      default:
+        action = "treat";
+        break;
+    }
 
+    // 4. Attach doctor input
+    const payload = {
+      ...req.body,
+      doctorNotes: notes || null,
+      decidedBy: "doctor",
+      decidedAt: new Date().toISOString()
+    };
+
+    // 5. Run through FSM (CORE)
     const updatedData = await processCaseState(
       record,
       action,
-      req.body
+      payload
     );
 
+    // 6. Clean system fields
     const cleaned = cleanBeforeSave(updatedData);
 
+    // 7. Persist
     const updated = await updateEncounterDB(
       id,
       cleaned,
       cleaned.status
     );
 
+    // 8. Respond (STRICT CONTRACT)
     return res.json({
       status: updated.status,
       encounter: sanitizeResponse(updated)
     });
 
   } catch (err) {
-    console.error("DECISION ERROR:", err);
-    res.status(400).json({ error: err.message });
+    console.error("DOCTOR DECISION ERROR:", err);
+    return res.status(400).json({
+      error: err.message
+    });
   }
 };
 
