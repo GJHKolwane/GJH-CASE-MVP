@@ -124,14 +124,15 @@ export const createEncounterHandler = async (req, res) => {
   }
 };
 
-/*
+
+================================================
+
+  /*
 ================================================
 INTAKE
 ================================================
 */
-export const intakeHandler = async (req, res) => {
-
-  export const intakeHandler = async (req, res) => {
+const intakeHandler = async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -147,20 +148,29 @@ export const intakeHandler = async (req, res) => {
 
     const cleaned = cleanBeforeSave(updatedData);
 
-    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
+    const updated = await updateEncounterDB(
+      id,
+      cleaned,
+      cleaned.status
+    );
 
-    // 🔥 FIX STARTS HERE
+    // 🔥 STANDARDIZED RESPONSE (CRITICAL FIX)
     const response = sanitizeResponse(updated);
 
     return res.json({
-      status: response.status,   // ✅ CRITICAL
-      encounter: response        // ✅ FULL DATA
+      status: response.status,   // ✅ required for frontend FSM
+      encounter: response        // ✅ full encounter object
     });
 
   } catch (err) {
     console.error("INTAKE ERROR:", err);
-    res.status(400).json({ error: err.message });
+    return res.status(400).json({ error: err.message });
   }
+};
+
+// ✅ COMMONJS EXPORT (FIXES YOUR ERROR)
+module.exports = {
+  intakeHandler
 };
 
 /*
