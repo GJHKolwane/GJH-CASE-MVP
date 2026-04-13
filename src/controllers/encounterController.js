@@ -116,23 +116,23 @@ export const createEncounterHandler = async (req, res) => {
 
     trace("create", encounter.id);
 
-    res.json(sanitizeResponse(encounter));
+    return res.json({
+      status: encounter.status,
+      encounter: sanitizeResponse(encounter)
+    });
 
   } catch (err) {
-    console.error("CREATE ENCOUNTER ERROR:", err);
+    console.error("CREATE ERROR:", err);
     res.status(500).json({ error: "Failed to create encounter" });
   }
 };
 
-
+/*
 ================================================
-
-  /*
-================================================
-INTAKE
+INTAKE (🔥 FIXED)
 ================================================
 */
-const intakeHandler = async (req, res) => {
+export const intakeHandler = async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -154,23 +154,17 @@ const intakeHandler = async (req, res) => {
       cleaned.status
     );
 
-    // 🔥 STANDARDIZED RESPONSE (CRITICAL FIX)
     const response = sanitizeResponse(updated);
 
     return res.json({
-      status: response.status,   // ✅ required for frontend FSM
-      encounter: response        // ✅ full encounter object
+      status: response.status,
+      encounter: response
     });
 
   } catch (err) {
     console.error("INTAKE ERROR:", err);
     return res.status(400).json({ error: err.message });
   }
-};
-
-// ✅ COMMONJS EXPORT (FIXES YOUR ERROR)
-module.exports = {
-  intakeHandler
 };
 
 /*
@@ -192,7 +186,10 @@ export const addVitalsHandler = async (req, res) => {
 
     const updated = await updateEncounterDB(id, cleaned, cleaned.status);
 
-    res.json(sanitizeResponse(updated));
+    return res.json({
+      status: updated.status,
+      encounter: sanitizeResponse(updated)
+    });
 
   } catch (err) {
     console.error("VITALS ERROR:", err);
@@ -202,7 +199,7 @@ export const addVitalsHandler = async (req, res) => {
 
 /*
 ================================================
-SYMPTOMS (NO ROUTING HERE ❌)
+SYMPTOMS (🔥 DEMO CORE)
 ================================================
 */
 export const addSymptomsHandler = async (req, res) => {
@@ -230,24 +227,22 @@ export const addSymptomsHandler = async (req, res) => {
 
     const { rules, ai, finalSeverity } = result;
 
-    const enrichedPayload = {
-      symptoms,
-      rules,
-      ai,
-      finalSeverity
-    };
-
     const updatedData = await processCaseState(
       record,
       "symptoms",
-      enrichedPayload
+      { symptoms, rules, ai, finalSeverity }
     );
 
     const cleaned = cleanBeforeSave(updatedData);
 
     const updated = await updateEncounterDB(id, cleaned, cleaned.status);
 
-    res.json(sanitizeResponse(updated));
+    return res.json({
+      status: updated.status,
+      encounter: sanitizeResponse(updated),
+      ai,
+      rules
+    });
 
   } catch (err) {
     console.error("SYMPTOMS ERROR:", err);
@@ -257,7 +252,7 @@ export const addSymptomsHandler = async (req, res) => {
 
 /*
 ================================================
-NURSE
+NURSE (HYBRID CONTROL)
 ================================================
 */
 export const nurseAssessmentHandler = async (req, res) => {
@@ -270,37 +265,14 @@ export const nurseAssessmentHandler = async (req, res) => {
 
     let updatedData = await processCaseState(record, "nurse", req.body);
 
-    const ed = updatedData.encounter_data;
-
-    const decision = await evaluateEncounter({
-      vitals: ed.vitals,
-      symptoms: ed.symptoms,
-      triage: ed.triage,
-      notes: req.body.notes
-    });
-
-    updatedData.encounter_data.finalSeverity = decision.finalSeverity;
-    updatedData.encounter_data.ai = decision.ai;
-    updatedData.rules = decision.rules;
-
-    updatedData.timeline = [
-      ...(updatedData.timeline || []),
-      {
-        event: "🧠 Clinical decision engine executed",
-        decision,
-        timestamp: new Date().toISOString()
-      }
-    ];
-
     updatedData = await ensureDecision(updatedData);
 
     const cleaned = cleanBeforeSave(updatedData);
 
     const updated = await updateEncounterDB(id, cleaned, cleaned.status);
 
-    res.json({
-      success: true,
-      decision,
+    return res.json({
+      status: updated.status,
       encounter: sanitizeResponse(updated)
     });
 
@@ -312,160 +284,32 @@ export const nurseAssessmentHandler = async (req, res) => {
 
 /*
 ================================================
-VALIDATION
+DOCTOR ASSIGNMENT (🔥 NEW)
 ================================================
 */
-export const validateEncounterHandler = async (req, res) => {
+export const assignDoctorHandler = async (req, res) => {
   try {
     const { id } = req.params;
 
-    trace("validate", id);
+    trace("doctor_assign", id);
 
-    let record = await getEncounterDB(id);
+    const record = await getEncounterDB(id);
 
-    record = await ensureDecision(record);
+    const updated = {
+      ...record,
+      doctor_assigned: true,
+      doctor_id: "DOC-" + crypto.randomUUID().slice(0, 6)
+    };
 
-    const updatedData = await processCaseState(record, "validate", req.body);
+    const saved = await updateEncounterDB(id, updated, updated.status);
 
-    const cleaned = cleanBeforeSave(updatedData);
-
-    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
-
-    res.json(sanitizeResponse(updated));
-
-  } catch (err) {
-    console.error("VALIDATION ERROR:", err);
-    res.status(400).json({ error: err.message });
-  }
-};
-
-/*
-================================================
-DECISION
-================================================
-*/
-export const decisionHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { type } = req.body;
-
-    trace("decision", id);
-
-    let record = await getEncounterDB(id);
-
-    record = await ensureDecision(record);
-
-    let action;
-
-    if (type === "doctor_escalation") action = "escalate";
-    else if (type === "followup_scheduled") action = "followup";
-    else action = "treat";
-
-    const updatedData = await processCaseState(record, action, req.body);
-
-    const cleaned = cleanBeforeSave(updatedData);
-
-    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
-
-    res.json(sanitizeResponse(updated));
+    return res.json({
+      status: saved.status,
+      encounter: sanitizeResponse(saved)
+    });
 
   } catch (err) {
-    console.error("DECISION ERROR:", err);
-    res.status(400).json({ error: err.message });
-  }
-};
-
-/*
-================================================
-DOCTOR CONSULTATION
-================================================
-*/
-export const doctorConsultationHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    trace("doctor_consult", id);
-
-    let record = await getEncounterDB(id);
-
-    record = await ensureDecision(record);
-
-    const updatedData = await processCaseState(record, "doctor", {});
-
-    const cleaned = cleanBeforeSave(updatedData);
-
-    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
-
-    res.json(sanitizeResponse(updated));
-
-  } catch (err) {
-    console.error("DOCTOR CONSULT ERROR:", err);
-    res.status(400).json({ error: err.message });
-  }
-};
-
-/*
-================================================
-DOCTOR NOTES
-================================================
-*/
-export const doctorNotesHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    trace("doctor_notes", id);
-
-    let record = await getEncounterDB(id);
-
-    record = await ensureDecision(record);
-
-    const updatedData = await processCaseState(
-      record,
-      "doctor_notes",
-      req.body
-    );
-
-    const cleaned = cleanBeforeSave(updatedData);
-
-    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
-
-    res.json(sanitizeResponse(updated));
-
-  } catch (err) {
-    console.error("DOCTOR NOTES ERROR:", err);
-    res.status(400).json({ error: err.message });
-  }
-};
-
-/*
-================================================
-DOCTOR DECISION
-================================================
-*/
-export const doctorDecisionHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    trace("doctor_decision", id);
-
-    let record = await getEncounterDB(id);
-
-    record = await ensureDecision(record);
-
-    const updatedData = await processCaseState(
-      record,
-      "doctor_decision",
-      req.body
-    );
-
-    const cleaned = cleanBeforeSave(updatedData);
-
-    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
-
-    res.json(sanitizeResponse(updated));
-
-  } catch (err) {
-    console.error("DOCTOR DECISION ERROR:", err);
+    console.error("DOCTOR ASSIGN ERROR:", err);
     res.status(400).json({ error: err.message });
   }
 };
@@ -483,7 +327,7 @@ export const getEncounterHandler = async (req, res) => {
 
     const record = await getEncounterDB(id);
 
-    res.json(sanitizeResponse(record));
+    return res.json(sanitizeResponse(record));
 
   } catch (err) {
     res.status(500).json({ error: "Fetch failed" });
@@ -503,7 +347,7 @@ export const getEncounterTimelineHandler = async (req, res) => {
 
     const record = await getEncounterDB(id);
 
-    res.json({
+    return res.json({
       timeline: record.timeline || []
     });
 
