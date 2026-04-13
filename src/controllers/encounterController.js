@@ -316,6 +316,46 @@ export const assignDoctorHandler = async (req, res) => {
 
 /*
 ================================================
+DOCTOR CONSULTATION (🔥 REQUIRED)
+================================================
+*/
+export const doctorConsultationHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    trace("doctor_consult", id);
+
+    let record = await getEncounterDB(id);
+
+    // ✅ Ensure AI decision exists
+    record = await ensureDecision(record);
+
+    const updatedData = await processCaseState(
+      record,
+      "doctor",
+      {}
+    );
+
+    const cleaned = cleanBeforeSave(updatedData);
+
+    const updated = await updateEncounterDB(
+      id,
+      cleaned,
+      cleaned.status
+    );
+
+    return res.json({
+      status: updated.status,
+      encounter: sanitizeResponse(updated)
+    });
+
+  } catch (err) {
+    console.error("DOCTOR CONSULT ERROR:", err);
+    res.status(400).json({ error: err.message });
+  }
+};
+/*
+================================================
 DECISION (🔥 REQUIRED FOR ROUTES)
 ================================================
 */
