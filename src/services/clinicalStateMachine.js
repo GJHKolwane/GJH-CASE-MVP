@@ -306,4 +306,4 @@ export function processCaseState(data = {}, action, payload = {}) {
   }
 
   throw new Error(`Invalid transition: ${currentState} → ${action}`);
-      }
+        }
