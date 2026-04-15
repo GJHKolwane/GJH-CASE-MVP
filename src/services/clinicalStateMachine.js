@@ -104,13 +104,14 @@ export function processCaseState(data = {}, action, payload = {}) {
   if (action === "nurse") enforce("symptoms_recorded");
 
   // ========================================
-  // 🔹 ESCALATION ENGINE
+  // 🔹 ESCALATION ENGINE (🔥 FIXED)
   // ========================================
 
   let escalation = { status: false };
 
+  // ✅ FIX: allow escalation at vitals stage
   const canEscalate =
-    ["symptoms_recorded", "awaiting_clinician_validation", "validated"].includes(currentState);
+    ["vitals_recorded", "symptoms_recorded", "awaiting_clinician_validation", "validated"].includes(currentState);
 
   if (severity && canEscalate) {
     escalation = createEscalation({
@@ -172,10 +173,12 @@ export function processCaseState(data = {}, action, payload = {}) {
   };
 
   // ========================================
-  // 🔥 ESCALATION OVERRIDE
+  // 🔥 ESCALATION OVERRIDE (🔥 FIXED)
   // ========================================
 
-  const forceEscalation = autoDecision === "ESCALATE";
+  const forceEscalation =
+    autoDecision === "ESCALATE" ||
+    autoDecision?.type === "doctor_escalation";
 
   if (
     canEscalate &&
@@ -223,7 +226,10 @@ export function processCaseState(data = {}, action, payload = {}) {
     });
   }
 
-  // 🔥 FINAL DECISION (FIXED ALIGNMENT)
+  // ========================================
+  // 🔹 FINAL DECISION
+  // ========================================
+
   if (currentState === "doctor_consultation") {
 
     if (action === "treat") {
@@ -300,4 +306,4 @@ export function processCaseState(data = {}, action, payload = {}) {
   }
 
   throw new Error(`Invalid transition: ${currentState} → ${action}`);
-    }
+      }
