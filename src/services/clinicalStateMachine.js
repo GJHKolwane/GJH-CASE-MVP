@@ -11,6 +11,10 @@ export function processCaseState(data = {}, action, payload = {}) {
 
   let normalizedPayload = {};
 
+  // ========================================
+  // 🔹 NORMALIZATION
+  // ========================================
+
   if (action === "intake") {
     normalizedPayload = {
       intake: {
@@ -41,6 +45,16 @@ export function processCaseState(data = {}, action, payload = {}) {
     };
   }
 
+  if (action === "doctor_notes") {
+    normalizedPayload = {
+      doctorNotes: payload.notes || payload.doctorNotes || ""
+    };
+  }
+
+  // ========================================
+  // 🔹 BASE DATA
+  // ========================================
+
   let newData = {
     ...data,
     encounter_data: {
@@ -50,16 +64,34 @@ export function processCaseState(data = {}, action, payload = {}) {
     timeline: [...(data.timeline || [])]
   };
 
-  // ✅ Store severity
+  // ========================================
+  // 🔹 SAFETY CLEAN
+  // ========================================
+
+  delete newData.encounter_data?.routing;
+  delete newData.encounter_data?.escalation;
+
+  // ========================================
+  // 🔹 SEVERITY
+  // ========================================
+
   if (payload.finalSeverity) {
     newData.encounter_data.finalSeverity = payload.finalSeverity;
   }
 
-  // ✅ Clean contamination
-  delete newData.encounter_data?.routing;
-  delete newData.encounter_data?.escalation;
+  const severity =
+    payload.finalSeverity ||
+    newData.encounter_data?.finalSeverity ||
+    null;
 
-  // 🚨 State guards
+  const rules = payload.rules || {};
+  const triggers = rules.triggers || [];
+  const autoDecision = rules.autoDecision;
+
+  // ========================================
+  // 🔹 STATE GUARD
+  // ========================================
+
   const enforce = (requiredState) => {
     if (currentState !== requiredState) {
       throw new Error(`❌ Invalid step. Required: ${requiredState}, Current: ${currentState}`);
@@ -71,17 +103,10 @@ export function processCaseState(data = {}, action, payload = {}) {
   if (action === "symptoms") enforce("vitals_recorded");
   if (action === "nurse") enforce("symptoms_recorded");
 
-  // 🧠 Severity
-  const severity =
-    payload.finalSeverity ||
-    newData.encounter_data?.finalSeverity ||
-    null;
+  // ========================================
+  // 🔹 ESCALATION ENGINE
+  // ========================================
 
-  const rules = payload.rules || {};
-  const triggers = rules.triggers || [];
-  const autoDecision = rules.autoDecision;
-
-  // 🚨 Escalation
   let escalation = { status: false };
 
   const canEscalate =
@@ -99,7 +124,10 @@ export function processCaseState(data = {}, action, payload = {}) {
   const prevEscalation = data.escalation || {};
   newData.escalation = escalation;
 
-  // 👨‍⚕️ Doctor assignment
+  // ========================================
+  // 🔹 DOCTOR AUTO ASSIGNMENT
+  // ========================================
+
   if (newData.escalation?.status && !newData.doctor) {
     const doctor = assignDoctor({
       escalation: newData.escalation,
@@ -115,7 +143,10 @@ export function processCaseState(data = {}, action, payload = {}) {
     }
   }
 
-  // 🧾 Timeline escalation
+  // ========================================
+  // 🔹 ESCALATION TIMELINE
+  // ========================================
+
   if (
     newData.escalation?.status &&
     (!prevEscalation.status || prevEscalation.level !== newData.escalation.level)
@@ -128,7 +159,10 @@ export function processCaseState(data = {}, action, payload = {}) {
     });
   }
 
-  // 🔥 FINAL ROUTING ENFORCER (CRITICAL FIX)
+  // ========================================
+  // 🔹 ROUTING ATTACHER
+  // ========================================
+
   const attachRouting = (obj) => {
     const finalSeverity = obj.encounter_data?.finalSeverity;
     if (finalSeverity) {
@@ -137,7 +171,10 @@ export function processCaseState(data = {}, action, payload = {}) {
     return obj;
   };
 
-  // 🚨 Escalation override
+  // ========================================
+  // 🔥 ESCALATION OVERRIDE
+  // ========================================
+
   const forceEscalation = autoDecision === "ESCALATE";
 
   if (
@@ -162,7 +199,10 @@ export function processCaseState(data = {}, action, payload = {}) {
     });
   }
 
-  // 👨‍⚕️ Doctor flow
+  // ========================================
+  // 👨‍⚕️ DOCTOR FLOW
+  // ========================================
+
   if (action === "doctor") {
     newData.timeline.push({ event: "👨‍⚕️ Doctor access", timestamp: now });
 
@@ -174,6 +214,8 @@ export function processCaseState(data = {}, action, payload = {}) {
   }
 
   if (action === "doctor_notes") {
+    newData.timeline.push({ event: "📝 Doctor notes added", timestamp: now });
+
     return attachRouting({
       ...newData,
       status: "doctor_notes_added",
@@ -181,15 +223,44 @@ export function processCaseState(data = {}, action, payload = {}) {
     });
   }
 
-  if (action === "doctor_decision") {
-    return attachRouting({
-      ...newData,
-      status: "completed",
-      current_state: "completed"
-    });
+  // 🔥 FINAL DECISION (FIXED ALIGNMENT)
+  if (currentState === "doctor_consultation") {
+
+    if (action === "treat") {
+      newData.timeline.push({ event: "💊 Treatment applied", timestamp: now });
+
+      return attachRouting({
+        ...newData,
+        status: "treatment_applied",
+        current_state: "treatment_applied"
+      });
+    }
+
+    if (action === "followup") {
+      newData.timeline.push({ event: "📅 Follow-up scheduled", timestamp: now });
+
+      return attachRouting({
+        ...newData,
+        status: "completed",
+        current_state: "completed"
+      });
+    }
+
+    if (action === "escalate") {
+      newData.timeline.push({ event: "🚨 Further escalation", timestamp: now });
+
+      return attachRouting({
+        ...newData,
+        status: "doctor_escalation",
+        current_state: "doctor_escalation"
+      });
+    }
   }
 
-  // 🧠 Normal flow
+  // ========================================
+  // 🔹 NORMAL FLOW
+  // ========================================
+
   switch (currentState) {
 
     case "created":
@@ -229,4 +300,4 @@ export function processCaseState(data = {}, action, payload = {}) {
   }
 
   throw new Error(`Invalid transition: ${currentState} → ${action}`);
-}
+    }
