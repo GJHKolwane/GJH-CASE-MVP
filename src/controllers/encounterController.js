@@ -1,7 +1,7 @@
 // src/controllers/encounterController.js
 
 import crypto from "crypto";
-import pool from "../db.js";
+import pool from "../config/db.js";
 
 import {
   createEncounterDB,
