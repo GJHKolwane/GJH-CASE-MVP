@@ -453,18 +453,30 @@ export const doctorDecisionHandler = async (req, res) => {
 };
 
 /*
+
+/*
 ================================================
-GET (🔥 FIXED)
+GET SINGLE ENCOUNTER (FINAL - PRODUCTION SAFE)
 ================================================
 */
 export const getEncounterHandler = async (req, res) => {
   try {
     const { id } = req.params;
 
+    // 🔍 TRACE
     trace("get", id);
 
+    // 🔍 FETCH FROM DB
     const record = await getEncounterDB(id);
 
+    // 🚨 SAFETY CHECK (extra guard)
+    if (!record) {
+      return res.status(404).json({
+        error: "Encounter not found"
+      });
+    }
+
+    // ✅ SUCCESS RESPONSE
     return res.json({
       status: record.status,
       encounter: sanitizeResponse(record)
@@ -472,7 +484,24 @@ export const getEncounterHandler = async (req, res) => {
 
   } catch (err) {
     console.error("GET ERROR:", err);
-    return res.status(500).json({ error: "Fetch failed" });
+
+    // 🎯 CONTROLLED ERRORS
+    if (err.message === "Invalid UUID provided to getEncounterDB") {
+      return res.status(400).json({
+        error: "Invalid encounter ID"
+      });
+    }
+
+    if (err.message === "Encounter not found") {
+      return res.status(404).json({
+        error: "Encounter not found"
+      });
+    }
+
+    // 💥 FALLBACK
+    return res.status(500).json({
+      error: "Fetch failed"
+    });
   }
 };
 
