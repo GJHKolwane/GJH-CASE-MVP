@@ -273,7 +273,7 @@ export const nurseAssessmentHandler = async (req, res) => {
 
 /*
 ================================================
-VALIDATE (🔥 MISSING FIXED)
+VALIDATE
 ================================================
 */
 export const validateEncounterHandler = async (req, res) => {
@@ -376,7 +376,7 @@ export const doctorConsultationHandler = async (req, res) => {
 
 /*
 ================================================
-DOCTOR NOTES (🔥 MISSING FIXED)
+DOCTOR NOTES
 ================================================
 */
 export const doctorNotesHandler = async (req, res) => {
@@ -454,15 +454,49 @@ export const doctorDecisionHandler = async (req, res) => {
 
 /*
 ================================================
-GET
+GET (🔥 FIXED)
 ================================================
 */
 export const getEncounterHandler = async (req, res) => {
-  const record = await getEncounterDB(req.params.id);
-  res.json(sanitizeResponse(record));
+  try {
+    const { id } = req.params;
+
+    trace("get", id);
+
+    const record = await getEncounterDB(id);
+
+    return res.json({
+      status: record.status,
+      encounter: sanitizeResponse(record)
+    });
+
+  } catch (err) {
+    console.error("GET ERROR:", err);
+    return res.status(500).json({ error: "Fetch failed" });
+  }
 };
 
+/*
+================================================
+TIMELINE (🔥 FIXED)
+================================================
+*/
 export const getEncounterTimelineHandler = async (req, res) => {
-  const record = await getEncounterDB(req.params.id);
-  res.json({ timeline: record.timeline || [] });
+  try {
+    const { id } = req.params;
+
+    trace("timeline", id);
+
+    const record = await getEncounterDB(id);
+
+    return res.json({
+      status: record.status,
+      encounter: sanitizeResponse(record),
+      timeline: record.timeline || []
+    });
+
+  } catch (err) {
+    console.error("TIMELINE ERROR:", err);
+    return res.status(500).json({ error: "Timeline fetch failed" });
+  }
 };
