@@ -163,31 +163,62 @@ export const intakeHandler = async (req, res) => {
 };
 
 /*
+/*
 ================================================
 VITALS
 ================================================
 */
+
 export const addVitalsHandler = async (req, res) => {
   try {
     const { id } = req.params;
+    const { heartRate, temperature, bloodPressure } = req.body;
 
     trace("vitals", id);
 
+    // =========================
+    // 1. FETCH ENCOUNTER
+    // =========================
     const record = await getEncounterDB(id);
 
-    const updatedData = await processCaseState(record, "vitals", req.body);
+    if (!record) {
+      return res.status(404).json({ error: "Encounter not found" });
+    }
 
-    const cleaned = cleanBeforeSave(updatedData);
+    const encounterData = record.encounter_data || {};
 
-    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
+    // =========================
+    // 2. NORMALIZE VITALS
+    // =========================
+    const normalizedVitals = {
+      heartRate: heartRate ? Number(heartRate) : null,
+      temperature: temperature ? Number(temperature) : null,
+      bloodPressure: bloodPressure || ""
+    };
 
+    console.log("🩺 NORMALIZED VITALS:", normalizedVitals);
+
+    encounterData.vitals = normalizedVitals;
+
+    // =========================
+    // 3. UPDATE DB
+    // =========================
+    const updated = await updateEncounterDB(
+      id,
+      encounterData,
+      "vitals_recorded"
+    );
+
+    // =========================
+    // 4. RESPONSE
+    // =========================
     return res.json({
       status: updated.status,
       encounter: sanitizeResponse(updated)
     });
 
   } catch (err) {
-    console.error("VITALS ERROR:", err);
+    console.error("❌ VITALS ERROR:", err);
     res.status(400).json({ error: err.message });
   }
 };
@@ -198,6 +229,7 @@ SYMPTOMS
 ================================================
 */
 
+import pool from "../db.js";
 import { evaluateClinicalState } from "../services/clinicalRulesEngine.js";
 
 export const addSymptomsHandler = async (req, res) => {
@@ -223,18 +255,27 @@ export const addSymptomsHandler = async (req, res) => {
     const encounterData = encounter.encounter_data || {};
 
     // =========================
-    // 2. SAVE SYMPTOMS
+    // 2. NORMALIZE SYMPTOMS
     // =========================
-    const normalizedSymptoms = Array.isArray(symptoms)
-      ? symptoms
-      : [];
+    let normalizedSymptoms = [];
+
+    if (Array.isArray(symptoms)) {
+      normalizedSymptoms = symptoms;
+    } else if (typeof symptoms === "string") {
+      normalizedSymptoms = symptoms
+        .split(",")
+        .map(s => s.trim())
+        .filter(Boolean);
+    }
+
+    console.log("🧾 NORMALIZED SYMPTOMS:", normalizedSymptoms);
 
     encounterData.symptoms = normalizedSymptoms;
 
     // =========================
-    // 🔥 3. HYBRID AI ENGINE
+    // 🧠 3. ENGINE EXECUTION
     // =========================
-    console.log("🧠 HYBRID AI ENGINE RUNNING");
+    console.log("🧠 CLINICAL ENGINE RUNNING");
 
     const clinicalInput = {
       vitals: encounterData.vitals || {},
@@ -248,13 +289,13 @@ export const addSymptomsHandler = async (req, res) => {
     console.log("🧠 AI RESULT:", aiResult);
 
     // =========================
-    // 🔥 4. STATE DECISION
+    // 🔄 4. FSM DECISION
     // =========================
     let newStatus = "symptoms_recorded";
 
     if (aiResult?.autoDecision?.type === "doctor_escalation") {
       newStatus = "doctor_escalation";
-      console.log("🚨 AUTO ESCALATION TRIGGERED");
+      console.log("🚨 ESCALATION TRIGGERED BY ENGINE");
     }
 
     // =========================
@@ -292,6 +333,8 @@ export const addSymptomsHandler = async (req, res) => {
     });
   }
 };
+
+
 /*
 ================================================
 NURSE
