@@ -196,49 +196,101 @@ export const addVitalsHandler = async (req, res) => {
 SYMPTOMS
 ================================================
 */
+
+import { evaluateClinicalState } from "../services/clinicalRulesEngine.js";
+
 export const addSymptomsHandler = async (req, res) => {
   try {
     const { id } = req.params;
+    const { symptoms } = req.body;
 
-    trace("symptoms", id);
+    console.log("🧾 [SYMPTOMS] id:", id);
 
-    const record = await getEncounterDB(id);
-
-    const symptoms = Array.isArray(req.body?.symptoms)
-      ? req.body.symptoms
-      : [];
-
-    const result = await evaluateEncounter({
-      vitals: record?.encounter_data?.vitals || {},
-      symptoms,
-      notes: record?.encounter_data?.notes || ""
-    });
-
-    const { rules, ai, finalSeverity } = result;
-
-    const updatedData = await processCaseState(
-      record,
-      "symptoms",
-      { symptoms, rules, ai, finalSeverity }
+    // =========================
+    // 1. FETCH ENCOUNTER
+    // =========================
+    const result = await pool.query(
+      "SELECT * FROM encounters WHERE id = $1",
+      [id]
     );
 
-    const cleaned = cleanBeforeSave(updatedData);
+    if (!result.rows.length) {
+      return res.status(404).json({ error: "Encounter not found" });
+    }
 
-    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
+    const encounter = result.rows[0];
+    const encounterData = encounter.encounter_data || {};
 
+    // =========================
+    // 2. SAVE SYMPTOMS
+    // =========================
+    const normalizedSymptoms = Array.isArray(symptoms)
+      ? symptoms
+      : [];
+
+    encounterData.symptoms = normalizedSymptoms;
+
+    // =========================
+    // 🔥 3. HYBRID AI ENGINE
+    // =========================
+    console.log("🧠 HYBRID AI ENGINE RUNNING");
+
+    const clinicalInput = {
+      vitals: encounterData.vitals || {},
+      symptoms: normalizedSymptoms,
+      intake: encounterData.intake || {},
+      patient: encounterData.patient || {}
+    };
+
+    const aiResult = evaluateClinicalState(clinicalInput);
+
+    console.log("🧠 AI RESULT:", aiResult);
+
+    // =========================
+    // 🔥 4. STATE DECISION
+    // =========================
+    let newStatus = "symptoms_recorded";
+
+    if (aiResult?.autoDecision?.type === "doctor_escalation") {
+      newStatus = "doctor_escalation";
+      console.log("🚨 AUTO ESCALATION TRIGGERED");
+    }
+
+    // =========================
+    // 5. STORE AI OUTPUT
+    // =========================
+    encounterData.ai = aiResult;
+
+    // =========================
+    // 6. UPDATE DB
+    // =========================
+    await pool.query(
+      `
+      UPDATE encounters
+      SET encounter_data = $1,
+          status = $2,
+          updated_at = NOW()
+      WHERE id = $3
+      `,
+      [encounterData, newStatus, id]
+    );
+
+    // =========================
+    // 7. RESPONSE
+    // =========================
     return res.json({
-      status: updated.status,
-      encounter: sanitizeResponse(updated),
-      ai,
-      rules
+      status: newStatus,
+      encounter_data: encounterData,
+      ai: aiResult
     });
 
   } catch (err) {
-    console.error("SYMPTOMS ERROR:", err);
-    res.status(400).json({ error: err.message });
+    console.error("❌ SYMPTOMS ERROR:", err);
+    return res.status(500).json({
+      error: "Failed to process symptoms"
+    });
   }
 };
-
 /*
 ================================================
 NURSE
