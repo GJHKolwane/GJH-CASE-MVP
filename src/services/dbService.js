@@ -101,12 +101,18 @@ export async function getEncounterDB(id) {
       throw new Error("Invalid UUID provided to getEncounterDB");
     }
 
+    console.log("🔍 DB FETCH ID:", id);
+
     const res = await query(
       `SELECT * FROM encounters WHERE id = $1::uuid`,
       [id]
     );
 
-    if (!res.rows[0]) return null;
+    console.log("📦 DB RESULT:", res.rows);
+
+    if (!res.rows[0]) {
+      throw new Error("Encounter not found");
+    }
 
     return sanitizeEncounterData(res.rows[0]);
 
@@ -115,7 +121,6 @@ export async function getEncounterDB(id) {
     throw err;
   }
 }
-
 /*
 ================================================
 UPDATE (FINAL FIX)
