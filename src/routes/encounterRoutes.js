@@ -71,7 +71,10 @@ router.post("/:id/symptoms", addSymptomsHandler);
 router.post("/:id/nurse", nurseAssessmentHandler);
 router.post("/:id/validate", validateEncounterHandler);
 router.post("/:id/decision", decisionHandler);
-
+router.post(
+  "/encounters/:id/nurse-decision",
+  nurseDecisionHandler
+);
 /*
 ================================================
 DOCTOR ENGINE
