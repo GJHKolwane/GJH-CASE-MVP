@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 
 import encounterRoutes from "./routes/encounterRoutes.js";
-import caseRoutes from "./routes/case.routes.js";
+
 
 console.log("✅ server started, routes importing...");
 
@@ -45,7 +45,6 @@ app.use(express.json());
 // ========================================
 // 🔹 ROUTES
 // ========================================
-app.use("/case", caseRoutes);
 app.use("/encounters", encounterRoutes);
 
 // ========================================
