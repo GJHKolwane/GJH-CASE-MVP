@@ -100,4 +100,4 @@ const nurseDecisionHandler = async (req, res) => {
   }
 };
 
-module.exports = nurseDecisionHandler;
+export default nurseDecisionHandler;
