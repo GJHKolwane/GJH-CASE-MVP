@@ -2,6 +2,7 @@
 
 import crypto from "crypto";
 import pool from "../config/db.js";
+import { evaluateClinicalState } from "../services/clinicalRulesEngine.js";
 
 import {
   createEncounterDB,
@@ -229,8 +230,6 @@ SYMPTOMS
 ================================================
 */
 
-import pool from "../db.js";
-import { evaluateClinicalState } from "../services/clinicalRulesEngine.js";
 
 export const addSymptomsHandler = async (req, res) => {
   try {
