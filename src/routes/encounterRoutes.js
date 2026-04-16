@@ -16,6 +16,9 @@ import {
   getEncounterTimelineHandler
 } from "../controllers/encounterController.js";
 
+// ✅ 🔥 NEW IMPORT (ES MODULE STYLE)
+import nurseDecisionHandler from "../controllers/nurseDecisionHandler.js";
+
 const router = express.Router();
 
 /*
@@ -29,7 +32,7 @@ router.get("/health", (req, res) => {
 
 /*
 ================================================
-GET ALL ENCOUNTERS (🔥 THIS FIXES YOUR ERROR)
+GET ALL ENCOUNTERS
 ================================================
 */
 router.get("/", async (req, res) => {
@@ -68,13 +71,15 @@ WORKFLOW
 router.post("/:id/intake", intakeHandler);
 router.post("/:id/vitals", addVitalsHandler);
 router.post("/:id/symptoms", addSymptomsHandler);
+
+// ⚠️ OLD FLOW (keep for now, but will phase out)
 router.post("/:id/nurse", nurseAssessmentHandler);
 router.post("/:id/validate", validateEncounterHandler);
 router.post("/:id/decision", decisionHandler);
-router.post(
-  "/encounters/:id/nurse-decision",
-  nurseDecisionHandler
-);
+
+// ✅ 🔥 NEW FLOW (CORRECT ROUTE)
+router.post("/:id/nurse-decision", nurseDecisionHandler);
+
 /*
 ================================================
 DOCTOR ENGINE
