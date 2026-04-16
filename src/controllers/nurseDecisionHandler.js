@@ -1,4 +1,4 @@
-const db = require("../models"); // adjust if needed
+import pool from "../config/db.js";
 
 const nurseDecisionHandler = async (req, res) => {
   try {
@@ -17,20 +17,24 @@ const nurseDecisionHandler = async (req, res) => {
       });
     }
 
-    // 🔥 FETCH ENCOUNTER
-    const encounter = await db.Encounter.findByPk(id);
+    // 🔥 GET ENCOUNTER
+    const result = await pool.query(
+      "SELECT * FROM encounters WHERE id = $1",
+      [id]
+    );
+
+    const encounter = result.rows[0];
 
     if (!encounter) {
       return res.status(404).json({ error: "Encounter not found" });
     }
 
     const data = encounter.encounter_data || {};
-
     const ai = data.aiAssessment;
 
     if (!ai) {
       return res.status(400).json({
-        error: "AI assessment not found. Run triage first.",
+        error: "AI assessment not found. Run symptoms first.",
       });
     }
 
@@ -56,18 +60,17 @@ const nurseDecisionHandler = async (req, res) => {
       };
     } else {
       return res.status(400).json({
-        error: "Invalid action type",
+        error: "Invalid action",
       });
     }
 
-    // 🔥 DETERMINE STATUS
-    let status = "COMPLETE";
+    // 🔥 STATUS
+    const status =
+      finalAssessment.escalation === true
+        ? "DOCTOR_REVIEW"
+        : "COMPLETE";
 
-    if (finalAssessment.escalation === true) {
-      status = "DOCTOR_REVIEW";
-    }
-
-    // 🔥 SAVE BACK INTO ENCOUNTER
+    // 🔥 UPDATE DATA
     const updatedData = {
       ...data,
       assessment: {
@@ -77,17 +80,23 @@ const nurseDecisionHandler = async (req, res) => {
       },
       finalSeverity: finalAssessment.riskLevel,
       escalation: {
-        status: finalAssessment.escalation ? "ESCALATED" : "NONE",
+        status: finalAssessment.escalation
+          ? "ESCALATED"
+          : "NONE",
       },
     };
 
-    encounter.encounter_data = updatedData;
-    encounter.status = status;
-
-    await encounter.save();
+    await pool.query(
+      `
+      UPDATE encounters
+      SET encounter_data = $1, status = $2
+      WHERE id = $3
+      `,
+      [updatedData, status, id]
+    );
 
     return res.json({
-      message: "Nurse decision processed successfully",
+      message: "Nurse decision processed",
       status,
       assessment: updatedData.assessment,
     });
