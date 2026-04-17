@@ -171,57 +171,79 @@ VITALS
 */
 
 export const addVitalsHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { heartRate, temperature, bloodPressure } = req.body;
+try {
+const { id } = req.params;
+const { heartRate, temperature, bloodPressure, oxygenSaturation } = req.body;
 
-    trace("vitals", id);
+trace("vitals", id);
 
-    // =========================
-    // 1. FETCH ENCOUNTER
-    // =========================
-    const record = await getEncounterDB(id);
+// =========================
+// 1. FETCH ENCOUNTER
+// =========================
+const record = await getEncounterDB(id);
 
-    if (!record) {
-      return res.status(404).json({ error: "Encounter not found" });
-    }
+if (!record) {
+  return res.status(404).json({ error: "Encounter not found" });
+}
 
-    const encounterData = record.encounter_data || {};
+const encounterData = record.encounter_data || {};
 
-    // =========================
-    // 2. NORMALIZE VITALS
-    // =========================
-    const normalizedVitals = {
-      heartRate: heartRate ? Number(heartRate) : null,
-      temperature: temperature ? Number(temperature) : null,
-      bloodPressure: bloodPressure || ""
-    };
+// =========================
+// 2. NORMALIZE → CLINICAL FORMAT (AI-READY)
+// =========================
+const normalizedVitals = {
+  heart_rate: heartRate ? Number(heartRate) : null,
+  temperature: temperature ? Number(temperature) : null,
+  blood_pressure: formatBloodPressure(bloodPressure),
+  spo2: oxygenSaturation ? Number(oxygenSaturation) : null,
+};
 
-    console.log("🩺 NORMALIZED VITALS:", normalizedVitals);
+console.log("🩺 NORMALIZED VITALS (AI READY):", normalizedVitals);
 
-    encounterData.vitals = normalizedVitals;
+// =========================
+// 3. STORE UNDER STANDARD KEY
+// =========================
+encounterData.vitals = normalizedVitals;
 
-    // =========================
-    // 3. UPDATE DB
-    // =========================
-    const updated = await updateEncounterDB(
-      id,
-      encounterData,
-      "vitals_recorded"
-    );
+// =========================
+// 4. UPDATE DB
+// =========================
+const updated = await updateEncounterDB(
+  id,
+  encounterData,
+  "vitals_recorded"
+);
 
-    // =========================
-    // 4. RESPONSE
-    // =========================
-    return res.json({
-      status: updated.status,
-      encounter: sanitizeResponse(updated)
-    });
+// =========================
+// 5. RESPONSE
+// =========================
+return res.json({
+  status: updated.status,
+  encounter: sanitizeResponse(updated),
+});
 
-  } catch (err) {
-    console.error("❌ VITALS ERROR:", err);
-    res.status(400).json({ error: err.message });
-  }
+} catch (err) {
+console.error("❌ VITALS ERROR:", err);
+res.status(400).json({ error: err.message });
+}
+};
+
+// ========================================
+// 🔧 HELPER — BLOOD PRESSURE NORMALIZER
+// ========================================
+const formatBloodPressure = (bp) => {
+if (!bp) return null;
+
+// Already correct format
+if (typeof bp === "string" && bp.includes("/")) return bp;
+
+// If only systolic provided → fallback
+const systolic = Number(bp);
+if (!isNaN(systolic)) {
+return "${systolic}/80"; // temporary default diastolic
+}
+
+return null;
 };
 
 /*
