@@ -3,39 +3,14 @@ import cors from "cors";
 
 import encounterRoutes from "./routes/encounterRoutes.js";
 
-
 console.log("✅ server started, routes importing...");
 
 const app = express();
 
 // ========================================
-// 🔥 CORS FIX (CODESPACES SAFE)
+// 🔥 CLEAN CORS (NO CONFLICTS)
 // ========================================
-app.use(cors({
-  origin: true,              // dynamically allow all origins
-  credentials: true,         // allow cookies/auth headers
-}));
-
-// 🔥 EXTRA HEADERS (ENSURE NO BLOCKING)
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", req.headers.origin || "*");
-  res.header("Access-Control-Allow-Credentials", "true");
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept, Authorization"
-  );
-  res.header(
-    "Access-Control-Allow-Methods",
-    "GET, POST, PUT, DELETE, OPTIONS"
-  );
-
-  // handle preflight requests
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
-  }
-
-  next();
-});
+app.use(cors());
 
 // ========================================
 // 🔹 MIDDLEWARE
@@ -48,21 +23,21 @@ app.use(express.json());
 app.use("/encounters", encounterRoutes);
 
 // ========================================
-// 🔹 HEALTH CHECK (VERY USEFUL)
+// 🔹 HEALTH CHECK
 // ========================================
 app.get("/", (req, res) => {
-  res.json({
-    status: "OK",
-    service: "GJH Clinical MCP",
-    time: new Date(),
-  });
+res.json({
+status: "OK",
+service: "GJH Clinical MCP",
+time: new Date(),
+});
 });
 
 // ========================================
-// 🔹 START SERVER
+// 🔹 START SERVER (CODESPACES SAFE)
 // ========================================
 const PORT = 5050;
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+console.log("🚀 Server running on port ${PORT}");
 });
