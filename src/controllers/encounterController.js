@@ -404,3 +404,113 @@ export const getEncounterTimelineHandler = async (req, res) => {
     return res.status(500).json({ error: "Timeline fetch failed" });
   }
 };
+
+/*
+================================================
+VALIDATE (CLINICAL GOVERNANCE)
+================================================
+*/
+export const validateEncounterHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    trace("validate", id);
+
+    let record = await getEncounterDB(id);
+
+    record = await ensureDecision(record);
+
+    const updatedData = await processCaseState(record, "validate", {});
+
+    const cleaned = cleanBeforeSave(updatedData);
+
+    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
+
+    return res.json({
+      status: updated.status,
+      encounter: sanitizeResponse(updated)
+    });
+
+  } catch (err) {
+    console.error("VALIDATE ERROR:", err);
+    res.status(400).json({ error: err.message });
+  }
+};
+
+/*
+================================================
+DOCTOR NOTES
+================================================
+*/
+export const doctorNotesHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { notes } = req.body;
+
+    trace("doctor_notes", id);
+
+    let record = await getEncounterDB(id);
+
+    const updatedData = await processCaseState(
+      record,
+      "doctor_notes",
+      { notes }
+    );
+
+    const cleaned = cleanBeforeSave(updatedData);
+
+    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
+
+    return res.json({
+      status: updated.status,
+      encounter: sanitizeResponse(updated)
+    });
+
+  } catch (err) {
+    console.error("DOCTOR NOTES ERROR:", err);
+    res.status(400).json({ error: err.message });
+  }
+};
+
+/*
+================================================
+DOCTOR DECISION (FINAL AUTHORITY)
+================================================
+*/
+export const doctorDecisionHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { decision } = req.body;
+
+    trace("doctor_decision", id);
+
+    let record = await getEncounterDB(id);
+
+    record = await ensureDecision(record);
+
+    let action;
+
+    if (decision === "escalate") action = "escalate";
+    else if (decision === "followup") action = "followup";
+    else action = "treat";
+
+    const updatedData = await processCaseState(
+      record,
+      action,
+      {}
+    );
+
+    const cleaned = cleanBeforeSave(updatedData);
+
+    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
+
+    return res.json({
+      status: updated.status,
+      encounter: sanitizeResponse(updated)
+    });
+
+  } catch (err) {
+    console.error("DOCTOR DECISION ERROR:", err);
+    res.status(400).json({ error: err.message });
+  }
+};
