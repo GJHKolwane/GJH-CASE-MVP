@@ -7,42 +7,17 @@ import {
   addVitalsHandler,
   addSymptomsHandler,
   nurseAssessmentHandler,
+  validateEncounterHandler,
   doctorConsultationHandler,
+  doctorNotesHandler,
+  doctorDecisionHandler,
   getEncounterHandler,
   getEncounterTimelineHandler
 } from "../controllers/encounterController.js";
 
-// ✅ NEW NURSE DECISION FLOW
 import nurseDecisionHandler from "../controllers/nurseDecisionHandler.js";
 
 const router = express.Router();
-
-/*
-================================================
-HEALTH CHECK
-================================================
-*/
-router.get("/health", (req, res) => {
-  res.json({ status: "encounter routes OK" });
-});
-
-/*
-================================================
-GET ALL ENCOUNTERS
-================================================
-*/
-router.get("/", async (req, res) => {
-  try {
-    const result = await pool.query(
-      "SELECT * FROM encounters ORDER BY id DESC"
-    );
-
-    res.json(result.rows);
-  } catch (err) {
-    console.error("GET ALL ENCOUNTERS ERROR:", err);
-    res.status(500).json({ message: "Failed to fetch encounters" });
-  }
-});
 
 /*
 ================================================
@@ -53,15 +28,20 @@ router.post("/", createEncounterHandler);
 
 /*
 ================================================
-GET SINGLE
+FETCH
 ================================================
 */
+router.get("/", async (req, res) => {
+  const result = await pool.query("SELECT * FROM encounters ORDER BY id DESC");
+  res.json(result.rows);
+});
+
 router.get("/:id", getEncounterHandler);
 router.get("/:id/timeline", getEncounterTimelineHandler);
 
 /*
 ================================================
-CORE WORKFLOW (AI-FIRST)
+CORE FLOW
 ================================================
 */
 router.post("/:id/intake", intakeHandler);
@@ -70,33 +50,20 @@ router.post("/:id/symptoms", addSymptomsHandler);
 
 /*
 ================================================
-NURSE FLOW
+NURSE + VALIDATION
 ================================================
 */
-// legacy (keep temporarily for compatibility)
 router.post("/:id/nurse", nurseAssessmentHandler);
-
-// ✅ PRIMARY FLOW (USE THIS)
 router.post("/:id/nurse-decision", nurseDecisionHandler);
+router.post("/:id/validate", validateEncounterHandler); // ✅ BACK
 
 /*
 ================================================
-DOCTOR FLOW
+DOCTOR FLOW (FULL RESTORED)
 ================================================
 */
 router.post("/:id/doctor", doctorConsultationHandler);
-
-/*
-================================================
-❌ REMOVED (CAUSE OF CRASHES)
-================================================
-- validateEncounterHandler
-- decisionHandler
-- doctorNotesHandler
-- doctorDecisionHandler
-
-👉 These were not in controller anymore
-👉 Reintroduce ONLY if rebuilt properly
-*/
+router.post("/:id/doctor_notes", doctorNotesHandler);
+router.post("/:id/doctor_decision", doctorDecisionHandler);
 
 export default router;
