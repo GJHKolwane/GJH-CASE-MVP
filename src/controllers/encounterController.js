@@ -1,8 +1,6 @@
 // src/controllers/encounterController.js
 
-import crypto from "crypto";
 import pool from "../config/db.js";
-import { evaluateClinicalState } from "../services/clinicalRulesEngine.js";
 
 import {
   createEncounterDB,
@@ -10,13 +8,11 @@ import {
   updateEncounterDB
 } from "../services/dbService.js";
 
-import {
-  processCaseState
-} from "../services/clinicalStateMachine.js";
+import { processCaseState } from "../services/clinicalStateMachine.js";
 
-import {
-  evaluateEncounter
-} from "../services/clinicalDecision.service.js";
+import { evaluateEncounter } from "../services/clinicalDecision.service.js";
+
+import { callAIOrchestrator } from "../services/aiOrchestrator.client.js";
 
 /*
 ================================================
@@ -64,7 +60,8 @@ const cleanBeforeSave = (data) => {
 const ensureDecision = async (data) => {
   const ed = data.encounter_data || {};
 
-  if (!ed.finalSeverity) {
+  // ✅ Only fallback if AI missing
+  if (!ed.finalSeverity && !ed.ai) {
     const decision = await evaluateEncounter({
       vitals: ed.vitals,
       symptoms: ed.symptoms,
@@ -72,14 +69,12 @@ const ensureDecision = async (data) => {
     });
 
     data.encounter_data.finalSeverity = decision.finalSeverity;
-    data.encounter_data.ai = decision.ai;
     data.rules = decision.rules;
 
     data.timeline = [
       ...(data.timeline || []),
       {
-        event: "🛡️ Safety decision engine executed",
-        decision,
+        event: "🛡️ Fallback decision engine executed",
         timestamp: new Date().toISOString()
       }
     ];
@@ -164,120 +159,85 @@ export const intakeHandler = async (req, res) => {
 };
 
 /*
-/*
 ================================================
 VITALS
 ================================================
 */
-
 export const addVitalsHandler = async (req, res) => {
-try {
-const { id } = req.params;
-const { heartRate, temperature, bloodPressure, oxygenSaturation } = req.body;
+  try {
+    const { id } = req.params;
+    const { heartRate, temperature, bloodPressure, oxygenSaturation } = req.body;
 
-trace("vitals", id);
+    trace("vitals", id);
 
-// =========================
-// 1. FETCH ENCOUNTER
-// =========================
-const record = await getEncounterDB(id);
+    const record = await getEncounterDB(id);
 
-if (!record) {
-  return res.status(404).json({ error: "Encounter not found" });
-}
+    if (!record) {
+      return res.status(404).json({ error: "Encounter not found" });
+    }
 
-const encounterData = record.encounter_data || {};
+    const encounterData = record.encounter_data || {};
 
-// =========================
-// 2. NORMALIZE → CLINICAL FORMAT (AI-READY)
-// =========================
-const normalizedVitals = {
-  heart_rate: heartRate ? Number(heartRate) : null,
-  temperature: temperature ? Number(temperature) : null,
-  blood_pressure: formatBloodPressure(bloodPressure),
-  spo2: oxygenSaturation ? Number(oxygenSaturation) : null,
+    const normalizedVitals = {
+      heart_rate: heartRate ? Number(heartRate) : null,
+      temperature: temperature ? Number(temperature) : null,
+      blood_pressure: formatBloodPressure(bloodPressure),
+      spo2: oxygenSaturation ? Number(oxygenSaturation) : null,
+    };
+
+    console.log("🩺 NORMALIZED VITALS:", normalizedVitals);
+
+    encounterData.vitals = normalizedVitals;
+
+    const updated = await updateEncounterDB(
+      id,
+      encounterData,
+      "vitals_recorded"
+    );
+
+    return res.json({
+      status: updated.status,
+      encounter: sanitizeResponse(updated),
+    });
+
+  } catch (err) {
+    console.error("❌ VITALS ERROR:", err);
+    res.status(400).json({ error: err.message });
+  }
 };
 
-console.log("🩺 NORMALIZED VITALS (AI READY):", normalizedVitals);
-
-// =========================
-// 3. STORE UNDER STANDARD KEY
-// =========================
-encounterData.vitals = normalizedVitals;
-
-// =========================
-// 4. UPDATE DB
-// =========================
-const updated = await updateEncounterDB(
-  id,
-  encounterData,
-  "vitals_recorded"
-);
-
-// =========================
-// 5. RESPONSE
-// =========================
-return res.json({
-  status: updated.status,
-  encounter: sanitizeResponse(updated),
-});
-
-} catch (err) {
-console.error("❌ VITALS ERROR:", err);
-res.status(400).json({ error: err.message });
-}
-};
-
-// ========================================
-// 🔧 HELPER — BLOOD PRESSURE NORMALIZER
-// ========================================
 const formatBloodPressure = (bp) => {
-if (!bp) return null;
+  if (!bp) return null;
+  if (typeof bp === "string" && bp.includes("/")) return bp;
 
-// Already correct format
-if (typeof bp === "string" && bp.includes("/")) return bp;
+  const systolic = Number(bp);
+  if (!isNaN(systolic)) {
+    return `${systolic}/80`; // ✅ FIXED TEMPLATE STRING
+  }
 
-// If only systolic provided → fallback
-const systolic = Number(bp);
-if (!isNaN(systolic)) {
-return "${systolic}/80"; // temporary default diastolic
-}
-
-return null;
+  return null;
 };
 
 /*
 ================================================
-SYMPTOMS
+SYMPTOMS (🔥 AI BRAIN)
 ================================================
 */
-
-
 export const addSymptomsHandler = async (req, res) => {
   try {
     const { id } = req.params;
     const { symptoms } = req.body;
 
-    console.log("🧾 [SYMPTOMS] id:", id);
+    trace("symptoms", id);
 
-    // =========================
-    // 1. FETCH ENCOUNTER
-    // =========================
-    const result = await pool.query(
-      "SELECT * FROM encounters WHERE id = $1",
-      [id]
-    );
+    const record = await getEncounterDB(id);
 
-    if (!result.rows.length) {
+    if (!record) {
       return res.status(404).json({ error: "Encounter not found" });
     }
 
-    const encounter = result.rows[0];
-    const encounterData = encounter.encounter_data || {};
+    const encounterData = record.encounter_data || {};
 
-    // =========================
-    // 2. NORMALIZE SYMPTOMS
-    // =========================
     let normalizedSymptoms = [];
 
     if (Array.isArray(symptoms)) {
@@ -293,57 +253,35 @@ export const addSymptomsHandler = async (req, res) => {
 
     encounterData.symptoms = normalizedSymptoms;
 
-    // =========================
-    // 🧠 3. ENGINE EXECUTION
-    // =========================
-    console.log("🧠 CLINICAL ENGINE RUNNING");
+    console.log("🧠 AI ORCHESTRATOR RUNNING");
 
-    const clinicalInput = {
+    const aiResult = await callAIOrchestrator({
+      inputText: normalizedSymptoms.join(", "),
       vitals: encounterData.vitals || {},
       symptoms: normalizedSymptoms,
-      intake: encounterData.intake || {},
-      patient: encounterData.patient || {}
-    };
-
-    const aiResult = evaluateClinicalState(clinicalInput);
+      encounterId: id,
+    });
 
     console.log("🧠 AI RESULT:", aiResult);
 
-    // =========================
-    // 🔄 4. FSM DECISION
-    // =========================
     let newStatus = "symptoms_recorded";
 
-    if (aiResult?.autoDecision?.type === "doctor_escalation") {
+    if (aiResult?.suggestedAction === "ESCALATE") {
       newStatus = "doctor_escalation";
-      console.log("🚨 ESCALATION TRIGGERED BY ENGINE");
+      console.log("🚨 ESCALATION TRIGGERED BY AI");
     }
 
-    // =========================
-    // 5. STORE AI OUTPUT
-    // =========================
     encounterData.ai = aiResult;
 
-    // =========================
-    // 6. UPDATE DB
-    // =========================
-    await pool.query(
-      `
-      UPDATE encounters
-      SET encounter_data = $1,
-          status = $2,
-          updated_at = NOW()
-      WHERE id = $3
-      `,
-      [encounterData, newStatus, id]
+    const updated = await updateEncounterDB(
+      id,
+      encounterData,
+      newStatus
     );
 
-    // =========================
-    // 7. RESPONSE
-    // =========================
     return res.json({
-      status: newStatus,
-      encounter_data: encounterData,
+      status: updated.status,
+      encounter: sanitizeResponse(updated),
       ai: aiResult
     });
 
@@ -354,7 +292,6 @@ export const addSymptomsHandler = async (req, res) => {
     });
   }
 };
-
 
 /*
 ================================================
@@ -390,78 +327,7 @@ export const nurseAssessmentHandler = async (req, res) => {
 
 /*
 ================================================
-VALIDATE
-================================================
-*/
-export const validateEncounterHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    trace("validate", id);
-
-    let record = await getEncounterDB(id);
-
-    record = await ensureDecision(record);
-
-    const updatedData = await processCaseState(record, "validate", {});
-
-    const cleaned = cleanBeforeSave(updatedData);
-
-    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
-
-    return res.json({
-      status: updated.status,
-      encounter: sanitizeResponse(updated)
-    });
-
-  } catch (err) {
-    console.error("VALIDATE ERROR:", err);
-    res.status(400).json({ error: err.message });
-  }
-};
-
-/*
-================================================
-SYSTEM DECISION
-================================================
-*/
-export const decisionHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { type } = req.body;
-
-    trace("decision", id);
-
-    let record = await getEncounterDB(id);
-
-    record = await ensureDecision(record);
-
-    let action;
-
-    if (type === "doctor_escalation") action = "escalate";
-    else if (type === "followup_scheduled") action = "followup";
-    else action = "treat";
-
-    const updatedData = await processCaseState(record, action, req.body);
-
-    const cleaned = cleanBeforeSave(updatedData);
-
-    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
-
-    return res.json({
-      status: updated.status,
-      encounter: sanitizeResponse(updated)
-    });
-
-  } catch (err) {
-    console.error("DECISION ERROR:", err);
-    res.status(400).json({ error: err.message });
-  }
-};
-
-/*
-================================================
-DOCTOR CONSULT
+DOCTOR FLOW
 ================================================
 */
 export const doctorConsultationHandler = async (req, res) => {
@@ -493,107 +359,21 @@ export const doctorConsultationHandler = async (req, res) => {
 
 /*
 ================================================
-DOCTOR NOTES
-================================================
-*/
-export const doctorNotesHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { notes } = req.body;
-
-    trace("doctor_notes", id);
-
-    let record = await getEncounterDB(id);
-
-    const updated = {
-      ...record,
-      encounter_data: {
-        ...record.encounter_data,
-        doctorNotes: notes
-      }
-    };
-
-    const saved = await updateEncounterDB(id, updated, updated.status);
-
-    return res.json({
-      status: saved.status,
-      encounter: sanitizeResponse(saved)
-    });
-
-  } catch (err) {
-    console.error("DOCTOR NOTES ERROR:", err);
-    res.status(400).json({ error: err.message });
-  }
-};
-
-/*
-================================================
-DOCTOR DECISION
-================================================
-*/
-export const doctorDecisionHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { decision, notes } = req.body;
-
-    trace("doctor-decision", id);
-
-    let record = await getEncounterDB(id);
-
-    record = await ensureDecision(record);
-
-    let action;
-
-    if (decision === "escalate") action = "escalate";
-    else if (decision === "followup") action = "followup";
-    else action = "treat";
-
-    const updatedData = await processCaseState(
-      record,
-      action,
-      { doctorNotes: notes }
-    );
-
-    const cleaned = cleanBeforeSave(updatedData);
-
-    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
-
-    return res.json({
-      status: updated.status,
-      encounter: sanitizeResponse(updated)
-    });
-
-  } catch (err) {
-    console.error("DOCTOR DECISION ERROR:", err);
-    res.status(400).json({ error: err.message });
-  }
-};
-
-/*
-
-/*
-================================================
-GET SINGLE ENCOUNTER (FINAL - PRODUCTION SAFE)
+GET + TIMELINE
 ================================================
 */
 export const getEncounterHandler = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // 🔍 TRACE
     trace("get", id);
 
-    // 🔍 FETCH FROM DB
     const record = await getEncounterDB(id);
 
-    // 🚨 SAFETY CHECK (extra guard)
     if (!record) {
-      return res.status(404).json({
-        error: "Encounter not found"
-      });
+      return res.status(404).json({ error: "Encounter not found" });
     }
 
-    // ✅ SUCCESS RESPONSE
     return res.json({
       status: record.status,
       encounter: sanitizeResponse(record)
@@ -601,32 +381,10 @@ export const getEncounterHandler = async (req, res) => {
 
   } catch (err) {
     console.error("GET ERROR:", err);
-
-    // 🎯 CONTROLLED ERRORS
-    if (err.message === "Invalid UUID provided to getEncounterDB") {
-      return res.status(400).json({
-        error: "Invalid encounter ID"
-      });
-    }
-
-    if (err.message === "Encounter not found") {
-      return res.status(404).json({
-        error: "Encounter not found"
-      });
-    }
-
-    // 💥 FALLBACK
-    return res.status(500).json({
-      error: "Fetch failed"
-    });
+    return res.status(500).json({ error: "Fetch failed" });
   }
 };
 
-/*
-================================================
-TIMELINE (🔥 FIXED)
-================================================
-*/
 export const getEncounterTimelineHandler = async (req, res) => {
   try {
     const { id } = req.params;
