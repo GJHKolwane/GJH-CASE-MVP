@@ -7,16 +7,12 @@ import {
   addVitalsHandler,
   addSymptomsHandler,
   nurseAssessmentHandler,
-  validateEncounterHandler,
-  decisionHandler,
   doctorConsultationHandler,
-  doctorNotesHandler,
-  doctorDecisionHandler,
   getEncounterHandler,
   getEncounterTimelineHandler
 } from "../controllers/encounterController.js";
 
-// ✅ 🔥 NEW IMPORT (ES MODULE STYLE)
+// ✅ NEW NURSE DECISION FLOW
 import nurseDecisionHandler from "../controllers/nurseDecisionHandler.js";
 
 const router = express.Router();
@@ -65,28 +61,42 @@ router.get("/:id/timeline", getEncounterTimelineHandler);
 
 /*
 ================================================
-WORKFLOW
+CORE WORKFLOW (AI-FIRST)
 ================================================
 */
 router.post("/:id/intake", intakeHandler);
 router.post("/:id/vitals", addVitalsHandler);
 router.post("/:id/symptoms", addSymptomsHandler);
 
-// ⚠️ OLD FLOW (keep for now, but will phase out)
+/*
+================================================
+NURSE FLOW
+================================================
+*/
+// legacy (keep temporarily for compatibility)
 router.post("/:id/nurse", nurseAssessmentHandler);
-router.post("/:id/validate", validateEncounterHandler);
-router.post("/:id/decision", decisionHandler);
 
-// ✅ 🔥 NEW FLOW (CORRECT ROUTE)
+// ✅ PRIMARY FLOW (USE THIS)
 router.post("/:id/nurse-decision", nurseDecisionHandler);
 
 /*
 ================================================
-DOCTOR ENGINE
+DOCTOR FLOW
 ================================================
 */
 router.post("/:id/doctor", doctorConsultationHandler);
-router.post("/:id/doctor_notes", doctorNotesHandler);
-router.post("/:id/doctor_decision", doctorDecisionHandler);
+
+/*
+================================================
+❌ REMOVED (CAUSE OF CRASHES)
+================================================
+- validateEncounterHandler
+- decisionHandler
+- doctorNotesHandler
+- doctorDecisionHandler
+
+👉 These were not in controller anymore
+👉 Reintroduce ONLY if rebuilt properly
+*/
 
 export default router;
