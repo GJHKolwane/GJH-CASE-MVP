@@ -17,7 +17,11 @@ const nurseDecisionHandler = async (req, res) => {
       });
     }
 
-    // 🔥 GET ENCOUNTER
+    /*
+    ========================================
+    🔥 FETCH ENCOUNTER
+    ========================================
+    */
     const result = await pool.query(
       "SELECT * FROM encounters WHERE id = $1",
       [id]
@@ -30,7 +34,9 @@ const nurseDecisionHandler = async (req, res) => {
     }
 
     const data = encounter.encounter_data || {};
-    const ai = data.aiAssessment;
+
+    // ✅ NEW AI FIELD (FIXED)
+    const ai = data.ai;
 
     if (!ai) {
       return res.status(400).json({
@@ -38,14 +44,20 @@ const nurseDecisionHandler = async (req, res) => {
       });
     }
 
-    // 🔥 FINAL DECISION LOGIC
+    /*
+    ========================================
+    🧠 FINAL DECISION LOGIC
+    ========================================
+    */
     let finalAssessment;
 
     if (action === "ACCEPT") {
       finalAssessment = {
         ...ai,
         source: "AI_CONFIRMED_BY_NURSE",
+        nurseNotes: notes,
       };
+
     } else if (action === "OVERRIDE") {
       if (!decision) {
         return res.status(400).json({
@@ -54,31 +66,50 @@ const nurseDecisionHandler = async (req, res) => {
       }
 
       finalAssessment = {
-        ...decision,
-        reasoning: notes,
+        riskLevel: decision.riskLevel || "LOW",
+        escalation: decision.escalation === true,
+        explanation: decision.explanation || [],
+        confidence: decision.confidence || 0.7,
         source: "NURSE_OVERRIDE",
+        nurseNotes: notes,
       };
+
     } else {
       return res.status(400).json({
         error: "Invalid action",
       });
     }
 
-    // 🔥 STATUS
+    /*
+    ========================================
+    🔥 STATUS LOGIC
+    ========================================
+    */
     const status =
       finalAssessment.escalation === true
         ? "DOCTOR_REVIEW"
         : "COMPLETE";
 
-    // 🔥 UPDATE DATA
+    /*
+    ========================================
+    💾 UPDATE DATA STRUCTURE
+    ========================================
+    */
     const updatedData = {
       ...data,
+
+      // ✅ SINGLE SOURCE OF TRUTH
+      ai,
+
+      // ✅ FULL AUDIT TRAIL
       assessment: {
         ai,
         nurseDecision,
         final: finalAssessment,
       },
+
       finalSeverity: finalAssessment.riskLevel,
+
       escalation: {
         status: finalAssessment.escalation
           ? "ESCALATED"
@@ -95,14 +126,20 @@ const nurseDecisionHandler = async (req, res) => {
       [updatedData, status, id]
     );
 
+    /*
+    ========================================
+    🚀 RESPONSE
+    ========================================
+    */
     return res.json({
       message: "Nurse decision processed",
       status,
-      assessment: updatedData.assessment,
+      finalAssessment,
     });
 
   } catch (err) {
     console.error("❌ nurseDecisionHandler ERROR:", err);
+
     return res.status(500).json({
       error: "Internal server error",
     });
