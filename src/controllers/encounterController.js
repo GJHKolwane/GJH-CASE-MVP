@@ -406,6 +406,7 @@ export const nurseAssessmentHandler = async (req, res) => {
 NURSE ENGINE (FINAL — STAGE BASED + HANDOVER SAFE)
 ================================================
 */
+
 export const nurseAssessmentHandler = async (req, res) => {
   try {
     const { id } = req.params;
@@ -419,10 +420,26 @@ export const nurseAssessmentHandler = async (req, res) => {
       return res.status(404).json({ error: "Encounter not found" });
     }
 
-    // 🔒 Ensure encounter_data exists
     record.encounter_data = record.encounter_data || {};
 
-    // 🔒 INIT nurse session (single active session model)
+    // ========================================
+    // 🔒 ENSURE DECISION EXISTS
+    // ========================================
+    if (!record.encounter_data.decision) {
+      throw new Error("Clinical decision not available. Run evaluation first.");
+    }
+
+    const decision = record.encounter_data.decision;
+    const rules = decision.rules || {};
+    const triage = decision.triage || {};
+
+    const missingData = rules.missingData || [];
+    const systemEscalation = triage.escalation || false;
+    const severity = triage.severity || "LOW";
+
+    // ========================================
+    // 🔒 INIT NURSE SESSION
+    // ========================================
     if (!record.encounter_data.nurseSession) {
       record.encounter_data.nurseSession = {
         status: "active",
@@ -434,32 +451,49 @@ export const nurseAssessmentHandler = async (req, res) => {
 
     const nurseSession = record.encounter_data.nurseSession;
 
-    // 🚫 Prevent operations on completed session
     if (nurseSession.status === "completed") {
       throw new Error("Nurse session already completed");
     }
 
-    // ====================================================
+    // ========================================
     // 🧠 STAGE SWITCH
-    // ====================================================
+    // ========================================
     switch (stage) {
 
       /*
       ================================================
-      1. VALIDATION (AI → Nurse Decision)
+      1. VALIDATION
       ================================================
       */
       case "validation": {
-        const { action, notes, escalation } = req.body;
+        const { action, notes, escalation: nurseOverride } = req.body;
 
-        if (typeof escalation !== "boolean") {
-          throw new Error("Escalation must be true/false");
+        // 🚫 BLOCK IF DATA INCOMPLETE
+        if (missingData.length > 0) {
+          return res.status(400).json({
+            error: "Incomplete clinical data",
+            missingData
+          });
         }
+
+        // 🧠 FINAL ESCALATION
+        const finalEscalation =
+          typeof nurseOverride === "boolean"
+            ? nurseOverride
+            : systemEscalation;
+
+        // ⚠️ TRACK OVERRIDE
+        const override =
+          typeof nurseOverride === "boolean" &&
+          nurseOverride !== systemEscalation;
 
         nurseSession.data.nurseDecision = {
           action,
           notes,
-          escalation,
+          escalation: finalEscalation,
+          systemEscalation,
+          override,
+          severity,
           timestamp: new Date()
         };
 
@@ -469,9 +503,10 @@ export const nurseAssessmentHandler = async (req, res) => {
         record.timeline = [
           ...(record.timeline || []),
           {
-            event: escalation
+            event: finalEscalation
               ? "⚠️ Nurse marked for escalation"
-              : "✅ Nurse validated case (no escalation)",
+              : "✅ Nurse validated case",
+            meta: { severity, override },
             timestamp: new Date().toISOString()
           }
         ];
@@ -481,7 +516,7 @@ export const nurseAssessmentHandler = async (req, res) => {
 
       /*
       ================================================
-      2. COMPLETION (NO ESCALATION PATH)
+      2. COMPLETION (NO ESCALATION)
       ================================================
       */
       case "completion": {
@@ -497,10 +532,9 @@ export const nurseAssessmentHandler = async (req, res) => {
         }
 
         if (nurseSession.data.nurseDecision.escalation === true) {
-          throw new Error("Cannot complete — escalation already chosen");
+          throw new Error("Cannot complete — escalation chosen");
         }
 
-        // 🔐 VALIDATION RULES
         if (!treatment) throw new Error("Treatment required");
 
         if (followUpRequired === true && !appointmentDate) {
@@ -511,7 +545,6 @@ export const nurseAssessmentHandler = async (req, res) => {
           throw new Error("Case must be closed if no follow-up");
         }
 
-        // 🧾 SAVE FINAL NURSE DECISION
         nurseSession.data.nurseDecision = {
           ...nurseSession.data.nurseDecision,
           treatment,
@@ -520,7 +553,6 @@ export const nurseAssessmentHandler = async (req, res) => {
           timestamp: new Date()
         };
 
-        // 📅 APPOINTMENT HANDLING
         if (followUpRequired) {
           record.encounter_data.appointment = {
             date: appointmentDate,
@@ -529,7 +561,6 @@ export const nurseAssessmentHandler = async (req, res) => {
           };
         }
 
-        // ✅ COMPLETE SESSION
         nurseSession.status = "completed";
         nurseSession.completedAt = new Date();
 
@@ -540,7 +571,7 @@ export const nurseAssessmentHandler = async (req, res) => {
           ...(record.timeline || []),
           {
             event: followUpRequired
-              ? "📅 Nurse completed + follow-up scheduled"
+              ? "📅 Nurse completed + follow-up"
               : "✅ Nurse completed + case closed",
             timestamp: new Date().toISOString()
           }
@@ -551,7 +582,7 @@ export const nurseAssessmentHandler = async (req, res) => {
 
       /*
       ================================================
-      3. ESCALATION → HANDOVER (WITH SLA)
+      3. ESCALATION → HANDOVER
       ================================================
       */
       case "escalation": {
@@ -562,12 +593,11 @@ export const nurseAssessmentHandler = async (req, res) => {
         }
 
         if (nurseSession.data.nurseDecision.escalation !== true) {
-          throw new Error("Escalation must be set to true in validation");
+          throw new Error("Escalation must be true in validation");
         }
 
         const SLA_MINUTES = 5;
 
-        // 🧾 UPDATE DECISION
         nurseSession.data.nurseDecision = {
           ...nurseSession.data.nurseDecision,
           notes,
@@ -575,7 +605,6 @@ export const nurseAssessmentHandler = async (req, res) => {
           timestamp: new Date()
         };
 
-        // 🔥 HANDOVER STATE (NO WHITE WALL)
         record.status = "handover_pending";
         record.current_owner = "system";
 
@@ -587,7 +616,7 @@ export const nurseAssessmentHandler = async (req, res) => {
         record.timeline = [
           ...(record.timeline || []),
           {
-            event: "🚨 Nurse escalated → awaiting doctor (handover started)",
+            event: "🚨 Nurse escalated → handover started",
             timestamp: new Date().toISOString()
           }
         ];
@@ -599,9 +628,9 @@ export const nurseAssessmentHandler = async (req, res) => {
         throw new Error("Invalid stage");
     }
 
-    // ====================================================
-    // 🧼 CLEAN + SAVE
-    // ====================================================
+    // ========================================
+    // 💾 SAVE
+    // ========================================
     const cleaned = cleanBeforeSave(record);
 
     const updated = await updateEncounterDB(id, cleaned, record.status);
@@ -613,105 +642,6 @@ export const nurseAssessmentHandler = async (req, res) => {
 
   } catch (err) {
     console.error("NURSE ERROR:", err);
-    res.status(400).json({ error: err.message });
-  }
-};
-/*
-================================================
-DOCTOR CLAIM (HANDOVER SAFE — NO WHITE WALL)
-================================================
-*/
-export const doctorClaimHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    trace("doctor_claim", id);
-
-    let record = await getEncounterDB(id);
-
-    if (!record) {
-      return res.status(404).json({ error: "Encounter not found" });
-    }
-
-    // 🔒 ONLY ALLOW CLAIM FROM HANDOVER STATES
-    if (
-      record.status !== "handover_pending" &&
-      record.status !== "critical_alert"
-    ) {
-      throw new Error("Case not available for claim");
-    }
-
-    record.encounter_data = record.encounter_data || {};
-
-    const nurseSession = record.encounter_data.nurseSession;
-
-    if (!nurseSession || nurseSession.status !== "handover_pending") {
-      throw new Error("Invalid nurse session state");
-    }
-
-    // ====================================================
-    // 👨‍⚕️ ASSIGN DOCTOR
-    // ====================================================
-    const doctorId = req.user?.id || "doctor_1"; // temp fallback
-
-    record.doctor = {
-      id: doctorId,
-      assignedAt: new Date()
-    };
-
-    // ====================================================
-    // 🔄 TRANSITION STATE
-    // ====================================================
-    record.status = "doctor_active";
-    record.current_owner = "doctor";
-
-    // ====================================================
-    // ✅ CLOSE NURSE SESSION (SAFE POINT)
-    // ====================================================
-    nurseSession.status = "completed";
-    nurseSession.completedAt = new Date();
-
-    // ====================================================
-    // 🆕 CREATE DOCTOR SESSION
-    // ====================================================
-    record.encounter_data.doctorSession = {
-      status: "active",
-      startedAt: new Date(),
-      completedAt: null,
-      data: {}
-    };
-
-    // ====================================================
-    // 🧾 TIMELINE (AUDIT TRAIL)
-    // ====================================================
-    record.timeline = [
-      ...(record.timeline || []),
-      {
-        event: "👨‍⚕️ Doctor claimed case (handover completed)",
-        doctorId,
-        timestamp: new Date().toISOString()
-      }
-    ];
-
-    // ====================================================
-    // 🧼 CLEAN SLA FLAGS (OPTIONAL BUT GOOD)
-    // ====================================================
-    record.slaBreached = false;
-
-    // ====================================================
-    // 💾 SAVE
-    // ====================================================
-    const cleaned = cleanBeforeSave(record);
-
-    const updated = await updateEncounterDB(id, cleaned, record.status);
-
-    return res.json({
-      status: updated.status,
-      encounter: sanitizeResponse(updated)
-    });
-
-  } catch (err) {
-    console.error("DOCTOR CLAIM ERROR:", err);
     res.status(400).json({ error: err.message });
   }
 };
