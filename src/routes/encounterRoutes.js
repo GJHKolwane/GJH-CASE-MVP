@@ -9,14 +9,13 @@ import {
   nurseAssessmentHandler,
   validateEncounterHandler,
   doctorConsultationHandler,
-  doctorNotesHandler,
-  doctorDecisionHandler,
-  doctorClaimHandler,              // ✅ NEW
+  doctorWorkHandler,              // ✅ NEW ENGINE
+  doctorClaimHandler,
   getEncounterHandler,
   getEncounterTimelineHandler
 } from "../controllers/encounterController.js";
 
-// ⚠️ TEMP — legacy (remove later if unused)
+// ⚠️ TEMP — legacy (remove after frontend fully migrates)
 import nurseDecisionHandler from "../controllers/nurseDecisionHandler.js";
 
 const router = express.Router();
@@ -43,7 +42,7 @@ router.get("/:id/timeline", getEncounterTimelineHandler);
 
 /*
 ================================================
-CORE FLOW
+CORE FLOW (FSM CONTROLLED)
 ================================================
 */
 router.post("/:id/intake", intakeHandler);
@@ -52,7 +51,7 @@ router.post("/:id/symptoms", addSymptomsHandler);
 
 /*
 ================================================
-NURSE ENGINE (NEW SYSTEM)
+NURSE ENGINE (STAGE-BASED — PRIMARY)
 ================================================
 */
 router.post("/:id/nurse", nurseAssessmentHandler);
@@ -66,16 +65,17 @@ router.post("/:id/validate", validateEncounterHandler);
 
 /*
 ================================================
-DOCTOR FLOW (HANDOVER + ACTIVE WORK)
+DOCTOR FLOW (HANDOVER + STAGE ENGINE)
 ================================================
 */
 
-// 🔥 HANDOVER CLAIM (NEW — CRITICAL)
+// 🔥 STEP 1: CLAIM (MANDATORY BEFORE ANY DOCTOR ACTION)
 router.post("/:id/claim", doctorClaimHandler);
 
-// ⚠️ LEGACY DOCTOR FLOW (WILL BE REPLACED NEXT)
+// 🔥 STEP 2: OPEN CASE (OPTIONAL — audit/logging)
 router.post("/:id/doctor", doctorConsultationHandler);
-router.post("/:id/doctor_notes", doctorNotesHandler);
-router.post("/:id/doctor_decision", doctorDecisionHandler);
+
+// 🔥 STEP 3: DOCTOR WORK (NOTES + DECISION — NEW ENGINE)
+router.post("/:id/doctor-work", doctorWorkHandler);
 
 export default router;
