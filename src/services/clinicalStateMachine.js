@@ -10,7 +10,7 @@ export function processCaseState(data = {}, action, payload = {}) {
   let normalizedPayload = {};
 
   // ========================================
-  // 🔹 NORMALIZATION
+  // 🔹 NORMALIZATION (PRE-CLINICAL ONLY)
   // ========================================
 
   if (action === "intake") {
@@ -37,12 +37,6 @@ export function processCaseState(data = {}, action, payload = {}) {
     };
   }
 
-  if (action === "doctor_notes") {
-    normalizedPayload = {
-      doctorNotes: payload.notes || payload.doctorNotes || ""
-    };
-  }
-
   // ========================================
   // 🔹 BASE DATA
   // ========================================
@@ -64,7 +58,7 @@ export function processCaseState(data = {}, action, payload = {}) {
   delete newData.encounter_data?.escalation;
 
   // ========================================
-  // 🔹 SEVERITY (KEEP FOR AI CONTEXT)
+  // 🔹 SEVERITY (AI CONTEXT ONLY)
   // ========================================
 
   if (payload.finalSeverity) {
@@ -77,7 +71,7 @@ export function processCaseState(data = {}, action, payload = {}) {
     null;
 
   // ========================================
-  // 🔹 ROUTING ATTACHER (SAFE)
+  // 🔹 ROUTING ATTACHER
   // ========================================
 
   const attachRouting = (obj) => {
@@ -101,71 +95,8 @@ export function processCaseState(data = {}, action, payload = {}) {
   if (action === "vitals") enforce("intake_completed");
   if (action === "symptoms") enforce("vitals_recorded");
 
-  // 🚫 Nurse REMOVED — handled by nurse engine
-
   // ========================================
-  // 👨‍⚕️ DOCTOR FLOW (TEMPORARY — WILL ALIGN NEXT)
-  // ========================================
-
-  if (action === "doctor") {
-    newData.timeline.push({ event: "👨‍⚕️ Doctor access", timestamp: now });
-
-    return attachRouting({
-      ...newData,
-      status: "doctor_consultation",
-      current_state: "doctor_consultation"
-    });
-  }
-
-  if (action === "doctor_notes") {
-    newData.timeline.push({ event: "📝 Doctor notes added", timestamp: now });
-
-    return attachRouting({
-      ...newData,
-      status: "doctor_notes_added",
-      current_state: "doctor_notes_added"
-    });
-  }
-
-  // ========================================
-  // 🔹 FINAL DECISION (DOCTOR)
-  // ========================================
-
-  if (currentState === "doctor_consultation") {
-
-    if (action === "treat") {
-      newData.timeline.push({ event: "💊 Treatment applied", timestamp: now });
-
-      return attachRouting({
-        ...newData,
-        status: "treatment_applied",
-        current_state: "treatment_applied"
-      });
-    }
-
-    if (action === "followup") {
-      newData.timeline.push({ event: "📅 Follow-up scheduled", timestamp: now });
-
-      return attachRouting({
-        ...newData,
-        status: "completed",
-        current_state: "completed"
-      });
-    }
-
-    if (action === "escalate") {
-      newData.timeline.push({ event: "🚨 Further escalation", timestamp: now });
-
-      return attachRouting({
-        ...newData,
-        status: "doctor_escalation",
-        current_state: "doctor_escalation"
-      });
-    }
-  }
-
-  // ========================================
-  // 🔹 NORMAL FLOW (CLEAN)
+  // 🔹 FSM FLOW (ENDS AT SYMPTOMS)
   // ========================================
 
   switch (currentState) {
@@ -205,4 +136,4 @@ export function processCaseState(data = {}, action, payload = {}) {
   }
 
   throw new Error(`Invalid transition: ${currentState} → ${action}`);
-    }
+}
