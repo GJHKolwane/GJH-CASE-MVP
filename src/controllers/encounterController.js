@@ -872,71 +872,148 @@ export const validateEncounterHandler = async (req, res) => {
 };
 
 /*
-================================================
-DOCTOR NOTES
-================================================
-*/
-export const doctorNotesHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { notes } = req.body;
-
-    trace("doctor_notes", id);
-
-    let record = await getEncounterDB(id);
-
-    const updatedData = await processCaseState(
-      record,
-      "doctor_notes",
-      { notes }
-    );
-
-    const cleaned = cleanBeforeSave(updatedData);
-
-    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
-
-    return res.json({
-      status: updated.status,
-      encounter: sanitizeResponse(updated)
-    });
-
-  } catch (err) {
-    console.error("DOCTOR NOTES ERROR:", err);
-    res.status(400).json({ error: err.message });
-  }
-};
 
 /*
 ================================================
-DOCTOR DECISION (FINAL AUTHORITY)
+DOCTOR ENGINE (STAGE BASED — FINAL)
 ================================================
 */
-export const doctorDecisionHandler = async (req, res) => {
+export const doctorWorkHandler = async (req, res) => {
   try {
     const { id } = req.params;
-    const { decision } = req.body;
+    const { stage } = req.body;
 
-    trace("doctor_decision", id);
+    trace("doctor_work", id);
 
     let record = await getEncounterDB(id);
 
-    record = await ensureDecision(record);
+    if (!record) {
+      return res.status(404).json({ error: "Encounter not found" });
+    }
 
-    let action;
+    record.encounter_data = record.encounter_data || {};
 
-    if (decision === "escalate") action = "escalate";
-    else if (decision === "followup") action = "followup";
-    else action = "treat";
+    // 🔒 ONLY ALLOW AFTER CLAIM
+    if (record.status !== "doctor_active") {
+      throw new Error("Doctor must claim case first");
+    }
 
-    const updatedData = await processCaseState(
-      record,
-      action,
-      {}
-    );
+    const doctorSession = record.encounter_data.doctorSession;
 
-    const cleaned = cleanBeforeSave(updatedData);
+    if (!doctorSession) {
+      throw new Error("Doctor session not initialized");
+    }
 
-    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
+    if (doctorSession.status === "completed") {
+      throw new Error("Doctor session already completed");
+    }
+
+    // ====================================================
+    // 🧠 STAGE SWITCH
+    // ====================================================
+    switch (stage) {
+
+      /*
+      ================================================
+      1. NOTES / SOAN BUILD
+      ================================================
+      */
+      case "notes": {
+        const { notes, diagnosis } = req.body;
+
+        doctorSession.data = {
+          ...doctorSession.data,
+          notes,
+          diagnosis,
+          timestamp: new Date()
+        };
+
+        record.timeline = [
+          ...(record.timeline || []),
+          {
+            event: "📝 Doctor added notes",
+            timestamp: new Date().toISOString()
+          }
+        ];
+
+        break;
+      }
+
+      /*
+      ================================================
+      2. DECISION (FINAL AUTHORITY)
+      ================================================
+      */
+      case "decision": {
+        const {
+          treatment,
+          followUpRequired,
+          appointmentDate,
+          closeCase
+        } = req.body;
+
+        if (!doctorSession.data?.notes) {
+          throw new Error("Doctor notes required before decision");
+        }
+
+        // 🔐 VALIDATION
+        if (!treatment) throw new Error("Treatment required");
+
+        if (followUpRequired && !appointmentDate) {
+          throw new Error("Appointment required");
+        }
+
+        if (!followUpRequired && !closeCase) {
+          throw new Error("Must close case if no follow-up");
+        }
+
+        doctorSession.data = {
+          ...doctorSession.data,
+          treatment,
+          followUpRequired,
+          appointmentDate,
+          completedAt: new Date()
+        };
+
+        // 📅 APPOINTMENT
+        if (followUpRequired) {
+          record.encounter_data.appointment = {
+            date: appointmentDate,
+            status: "scheduled",
+            createdAt: new Date()
+          };
+        }
+
+        // ✅ COMPLETE SESSION
+        doctorSession.status = "completed";
+        doctorSession.completedAt = new Date();
+
+        record.status = "completed";
+        record.current_owner = null;
+
+        record.timeline = [
+          ...(record.timeline || []),
+          {
+            event: followUpRequired
+              ? "📅 Doctor completed + follow-up scheduled"
+              : "✅ Doctor completed + case closed",
+            timestamp: new Date().toISOString()
+          }
+        ];
+
+        break;
+      }
+
+      default:
+        throw new Error("Invalid stage");
+    }
+
+    // ====================================================
+    // 💾 SAVE
+    // ====================================================
+    const cleaned = cleanBeforeSave(record);
+
+    const updated = await updateEncounterDB(id, cleaned, record.status);
 
     return res.json({
       status: updated.status,
@@ -944,7 +1021,7 @@ export const doctorDecisionHandler = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("DOCTOR DECISION ERROR:", err);
+    console.error("DOCTOR ENGINE ERROR:", err);
     res.status(400).json({ error: err.message });
   }
 };
