@@ -717,25 +717,68 @@ export const doctorClaimHandler = async (req, res) => {
 };
         
 /*
+
+/*
 ================================================
-DOCTOR FLOW
+DOCTOR ENGINE (SESSION-BASED — HANDOVER ALIGNED)
 ================================================
 */
 export const doctorConsultationHandler = async (req, res) => {
   try {
     const { id } = req.params;
 
-    trace("doctor_consult", id);
+    trace("doctor", id);
 
     let record = await getEncounterDB(id);
 
+    if (!record) {
+      return res.status(404).json({ error: "Encounter not found" });
+    }
+
+    record.encounter_data = record.encounter_data || {};
+
+    // ====================================================
+    // 🔒 ONLY ALLOW ACCESS AFTER CLAIM
+    // ====================================================
+    if (record.status !== "doctor_active") {
+      throw new Error("Doctor must claim case before consultation");
+    }
+
+    // ====================================================
+    // 🧠 ENSURE DOCTOR SESSION EXISTS
+    // ====================================================
+    if (!record.encounter_data.doctorSession) {
+      throw new Error("Doctor session not initialized");
+    }
+
+    const doctorSession = record.encounter_data.doctorSession;
+
+    if (doctorSession.status === "completed") {
+      throw new Error("Doctor session already completed");
+    }
+
+    // ====================================================
+    // 🧾 OPTIONAL SAFETY DECISION (KEEP AI FALLBACK)
+    // ====================================================
     record = await ensureDecision(record);
 
-    const updatedData = await processCaseState(record, "doctor", {});
+    // ====================================================
+    // 🔄 MARK ACTIVE INTERACTION
+    // ====================================================
+    record.timeline = [
+      ...(record.timeline || []),
+      {
+        event: "👨‍⚕️ Doctor opened case",
+        timestamp: new Date().toISOString()
+      }
+    ];
 
-    const cleaned = cleanBeforeSave(updatedData);
+    // ====================================================
+    // 💾 SAVE (NO STATE CHANGE YET)
+    // ====================================================
+    const cleaned = cleanBeforeSave(record);
 
-    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
+    const updated = await updateEncounterDB(id, cleaned, record.status);
 
     return res.json({
       status: updated.status,
@@ -743,7 +786,7 @@ export const doctorConsultationHandler = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("DOCTOR CONSULT ERROR:", err);
+    console.error("DOCTOR ERROR:", err);
     res.status(400).json({ error: err.message });
   }
 };
