@@ -219,8 +219,10 @@ const formatBloodPressure = (bp) => {
 };
 
 /*
+
+/*
 ================================================
-SYMPTOMS (🔥 AI BRAIN)
+SYMPTOMS (🔥 AI + DECISION ENGINE — ALIGNED)
 ================================================
 */
 export const addSymptomsHandler = async (req, res) => {
@@ -236,8 +238,12 @@ export const addSymptomsHandler = async (req, res) => {
       return res.status(404).json({ error: "Encounter not found" });
     }
 
-    const encounterData = record.encounter_data || {};
+    record.encounter_data = record.encounter_data || {};
+    const encounterData = record.encounter_data;
 
+    // ========================================
+    // 🔹 NORMALIZE SYMPTOMS
+    // ========================================
     let normalizedSymptoms = [];
 
     if (Array.isArray(symptoms)) {
@@ -253,26 +259,53 @@ export const addSymptomsHandler = async (req, res) => {
 
     encounterData.symptoms = normalizedSymptoms;
 
-    console.log("🧠 AI ORCHESTRATOR RUNNING");
+    // ========================================
+    // 🧠 AI ORCHESTRATOR (ASSISTIVE ONLY)
+    // ========================================
+    let aiResult = null;
 
-    const aiResult = await callAIOrchestrator({
-      inputText: normalizedSymptoms.join(", "),
-      vitals: encounterData.vitals || {},
-      symptoms: normalizedSymptoms,
-      encounterId: id,
-    });
+    try {
+      console.log("🧠 AI ORCHESTRATOR RUNNING");
 
-    console.log("🧠 AI RESULT:", aiResult);
+      aiResult = await callAIOrchestrator({
+        inputText: normalizedSymptoms.join(", "),
+        vitals: encounterData.vitals || {},
+        symptoms: normalizedSymptoms,
+        intake: encounterData.intake || {}, // 🔥 NEW (IMPORTANT)
+        encounterId: id
+      });
 
-    let newStatus = "symptoms_recorded";
+      console.log("🧠 AI RESULT:", aiResult);
 
-    if (aiResult?.suggestedAction === "ESCALATE") {
-      newStatus = "doctor_escalation";
-      console.log("🚨 ESCALATION TRIGGERED BY AI");
+      encounterData.ai = aiResult;
+
+    } catch (aiError) {
+      console.error("⚠️ AI FAILED — continuing safely:", aiError.message);
+      encounterData.ai = null;
     }
 
-    encounterData.ai = aiResult;
+    // ========================================
+    // 🛡️ DECISION ENGINE (PRIMARY)
+    // ========================================
+    const decision = await evaluateEncounter(encounterData);
 
+    // 🔥 STORE DECISION (CRITICAL)
+    encounterData.decision = decision;
+
+    // 🔹 Optional flattened fields (for quick access)
+    encounterData.finalSeverity = decision.finalSeverity;
+    encounterData.rules = decision.rules;
+
+    console.log("🛡️ DECISION RESULT:", decision);
+
+    // ========================================
+    // 🔒 FORCE CLEAN STATE (NO DOCTOR LOGIC HERE)
+    // ========================================
+    const newStatus = "symptoms_recorded";
+
+    // ========================================
+    // 💾 SAVE
+    // ========================================
     const updated = await updateEncounterDB(
       id,
       encounterData,
@@ -282,7 +315,8 @@ export const addSymptomsHandler = async (req, res) => {
     return res.json({
       status: updated.status,
       encounter: sanitizeResponse(updated),
-      ai: aiResult
+      ai: aiResult,
+      decision
     });
 
   } catch (err) {
@@ -292,7 +326,6 @@ export const addSymptomsHandler = async (req, res) => {
     });
   }
 };
-
 /*
 ================================================
 NURSE
