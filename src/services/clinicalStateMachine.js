@@ -1,7 +1,5 @@
 // src/services/clinicalStateMachine.js
 
-import { createEscalation } from "./escalation.service.js";
-import { assignDoctor } from "./doctor.service.js";
 import { buildRouting } from "./routing.service.js";
 
 export function processCaseState(data = {}, action, payload = {}) {
@@ -39,12 +37,6 @@ export function processCaseState(data = {}, action, payload = {}) {
     };
   }
 
-  if (action === "nurse") {
-    normalizedPayload = {
-      triage: { ...payload }
-    };
-  }
-
   if (action === "doctor_notes") {
     normalizedPayload = {
       doctorNotes: payload.notes || payload.doctorNotes || ""
@@ -72,24 +64,31 @@ export function processCaseState(data = {}, action, payload = {}) {
   delete newData.encounter_data?.escalation;
 
   // ========================================
-  // 🔹 SEVERITY
+  // 🔹 SEVERITY (KEEP FOR AI CONTEXT)
   // ========================================
 
   if (payload.finalSeverity) {
     newData.encounter_data.finalSeverity = payload.finalSeverity;
   }
 
-  const severity =
+  const finalSeverity =
     payload.finalSeverity ||
     newData.encounter_data?.finalSeverity ||
     null;
 
-  const rules = payload.rules || {};
-  const triggers = rules.triggers || [];
-  const autoDecision = rules.autoDecision;
+  // ========================================
+  // 🔹 ROUTING ATTACHER (SAFE)
+  // ========================================
+
+  const attachRouting = (obj) => {
+    if (finalSeverity) {
+      obj.routing = buildRouting(finalSeverity);
+    }
+    return obj;
+  };
 
   // ========================================
-  // 🔹 STATE GUARD
+  // 🔹 STATE GUARDS
   // ========================================
 
   const enforce = (requiredState) => {
@@ -101,109 +100,11 @@ export function processCaseState(data = {}, action, payload = {}) {
   if (action === "intake") enforce("created");
   if (action === "vitals") enforce("intake_completed");
   if (action === "symptoms") enforce("vitals_recorded");
-  if (action === "nurse") enforce("symptoms_recorded");
+
+  // 🚫 Nurse REMOVED — handled by nurse engine
 
   // ========================================
-  // 🔹 ESCALATION ENGINE (🔥 FIXED)
-  // ========================================
-
-  let escalation = { status: false };
-
-  // ✅ FIX: allow escalation at vitals stage
-  const canEscalate =
-    ["vitals_recorded", "symptoms_recorded", "awaiting_clinician_validation", "validated"].includes(currentState);
-
-  if (severity && canEscalate) {
-    escalation = createEscalation({
-      finalSeverity: severity,
-      triggers,
-      vitals: newData.encounter_data?.vitals,
-      symptoms: newData.encounter_data?.symptoms
-    });
-  }
-
-  const prevEscalation = data.escalation || {};
-  newData.escalation = escalation;
-
-  // ========================================
-  // 🔹 DOCTOR AUTO ASSIGNMENT
-  // ========================================
-
-  if (newData.escalation?.status && !newData.doctor) {
-    const doctor = assignDoctor({
-      escalation: newData.escalation,
-      caseId: newData.id || "unknown"
-    });
-
-    if (doctor) {
-      newData.doctor = doctor;
-      newData.timeline.push({
-        event: `👨‍⚕️ Doctor assigned (${doctor.name})`,
-        timestamp: now
-      });
-    }
-  }
-
-  // ========================================
-  // 🔹 ESCALATION TIMELINE
-  // ========================================
-
-  if (
-    newData.escalation?.status &&
-    (!prevEscalation.status || prevEscalation.level !== newData.escalation.level)
-  ) {
-    newData.timeline.push({
-      event: `🚨 Auto escalation (${newData.escalation.level || "critical"})`,
-      reason: newData.escalation.reason,
-      triggers,
-      timestamp: now
-    });
-  }
-
-  // ========================================
-  // 🔹 ROUTING ATTACHER
-  // ========================================
-
-  const attachRouting = (obj) => {
-    const finalSeverity = obj.encounter_data?.finalSeverity;
-    if (finalSeverity) {
-      obj.routing = buildRouting(finalSeverity);
-    }
-    return obj;
-  };
-
-  // ========================================
-  // 🔥 ESCALATION OVERRIDE (🔥 FIXED)
-  // ========================================
-
-  const forceEscalation =
-    autoDecision === "ESCALATE" ||
-    autoDecision?.type === "doctor_escalation";
-
-  if (
-    canEscalate &&
-    (forceEscalation || newData.escalation?.status) &&
-    currentState !== "doctor_escalation" &&
-    currentState !== "doctor_consultation" &&
-    action !== "doctor"
-  ) {
-    newData.timeline.push({
-      event: forceEscalation
-        ? "⚠️ Rule-based forced escalation"
-        : "🚨 Escalation triggered",
-      triggers,
-      timestamp: now
-    });
-
-    return attachRouting({
-      ...newData,
-      status: "doctor_escalation",
-      current_state: "doctor_escalation"
-    });
-  }
-
-  // ========================================
-  // 👨‍⚕️ DOCTOR FLOW
+  // 👨‍⚕️ DOCTOR FLOW (TEMPORARY — WILL ALIGN NEXT)
   // ========================================
 
   if (action === "doctor") {
@@ -227,7 +128,7 @@ export function processCaseState(data = {}, action, payload = {}) {
   }
 
   // ========================================
-  // 🔹 FINAL DECISION
+  // 🔹 FINAL DECISION (DOCTOR)
   // ========================================
 
   if (currentState === "doctor_consultation") {
@@ -264,7 +165,7 @@ export function processCaseState(data = {}, action, payload = {}) {
   }
 
   // ========================================
-  // 🔹 NORMAL FLOW
+  // 🔹 NORMAL FLOW (CLEAN)
   // ========================================
 
   switch (currentState) {
@@ -272,38 +173,36 @@ export function processCaseState(data = {}, action, payload = {}) {
     case "created":
       if (action === "intake") {
         newData.timeline.push({ event: "🧾 Intake completed", timestamp: now });
-        return attachRouting({ ...newData, status: "intake_completed", current_state: "intake_completed" });
+        return attachRouting({
+          ...newData,
+          status: "intake_completed",
+          current_state: "intake_completed"
+        });
       }
       break;
 
     case "intake_completed":
       if (action === "vitals") {
         newData.timeline.push({ event: "💓 Vitals recorded", timestamp: now });
-        return attachRouting({ ...newData, status: "vitals_recorded", current_state: "vitals_recorded" });
+        return attachRouting({
+          ...newData,
+          status: "vitals_recorded",
+          current_state: "vitals_recorded"
+        });
       }
       break;
 
     case "vitals_recorded":
       if (action === "symptoms") {
         newData.timeline.push({ event: "🤒 Symptoms recorded", timestamp: now });
-        return attachRouting({ ...newData, status: "symptoms_recorded", current_state: "symptoms_recorded" });
-      }
-      break;
-
-    case "symptoms_recorded":
-      if (action === "nurse") {
-        newData.timeline.push({ event: "👩‍⚕️ Nurse assessment completed", timestamp: now });
-        return attachRouting({ ...newData, status: "awaiting_clinician_validation", current_state: "awaiting_clinician_validation" });
-      }
-      break;
-
-    case "awaiting_clinician_validation":
-      if (action === "validate") {
-        newData.timeline.push({ event: "✅ Validation completed", timestamp: now });
-        return attachRouting({ ...newData, status: "validated", current_state: "validated" });
+        return attachRouting({
+          ...newData,
+          status: "symptoms_recorded",
+          current_state: "symptoms_recorded"
+        });
       }
       break;
   }
 
   throw new Error(`Invalid transition: ${currentState} → ${action}`);
-        }
+    }
