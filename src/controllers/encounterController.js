@@ -298,21 +298,159 @@ export const addSymptomsHandler = async (req, res) => {
 NURSE
 ================================================
 */
+
 export const nurseAssessmentHandler = async (req, res) => {
   try {
     const { id } = req.params;
+    const { stage } = req.body;
 
     trace("nurse", id);
 
     let record = await getEncounterDB(id);
 
-    let updatedData = await processCaseState(record, "nurse", req.body);
+    if (!record) {
+      return res.status(404).json({ error: "Encounter not found" });
+    }
 
-    updatedData = await ensureDecision(updatedData);
+    // 🔒 Ensure encounter_data exists
+    record.encounter_data = record.encounter_data || {};
 
-    const cleaned = cleanBeforeSave(updatedData);
+    // 🔒 INIT nurse session if missing (temporary inline approach)
+    if (!record.encounter_data.nurseSession) {
+      record.encounter_data.nurseSession = {
+        status: "active",
+        startedAt: new Date(),
+        data: {}
+      };
+    }
 
-    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
+    const nurseSession = record.encounter_data.nurseSession;
+
+    // ====================================================
+    // 🧠 STAGE SWITCH
+    // ====================================================
+    switch (stage) {
+
+      /*
+      ================================================
+      1. VALIDATION (AI → Nurse Decision)
+      ================================================
+      */
+      case "validation": {
+        const { action, notes, escalation } = req.body;
+
+        nurseSession.data.nurseDecision = {
+          action,
+          notes,
+          escalation,
+          timestamp: new Date()
+        };
+
+        record.status = "nurse_validated";
+        break;
+      }
+
+      /*
+      ================================================
+      2. COMPLETION (NO ESCALATION PATH)
+      ================================================
+      */
+      case "completion": {
+        const {
+          treatment,
+          followUpRequired,
+          appointmentDate,
+          closeCase
+        } = req.body;
+
+        if (!nurseSession.data?.nurseDecision) {
+          throw new Error("Validation must happen first");
+        }
+
+        if (nurseSession.data.nurseDecision.escalation === true) {
+          throw new Error("Cannot complete — escalation already chosen");
+        }
+
+        // 🔐 VALIDATION
+        if (!treatment) throw new Error("Treatment required");
+
+        if (followUpRequired && !appointmentDate) {
+          throw new Error("Appointment date required");
+        }
+
+        if (!followUpRequired && !closeCase) {
+          throw new Error("Case must be closed if no follow-up");
+        }
+
+        // 🧾 SAVE
+        nurseSession.data.nurseDecision = {
+          ...nurseSession.data.nurseDecision,
+          treatment,
+          followUpRequired,
+          appointmentDate,
+          timestamp: new Date()
+        };
+
+        // 📅 APPOINTMENT
+        if (followUpRequired) {
+          record.encounter_data.appointment = {
+            date: appointmentDate,
+            status: "scheduled",
+            createdAt: new Date()
+          };
+        }
+
+        // ✅ COMPLETE
+        nurseSession.status = "completed";
+        nurseSession.completedAt = new Date();
+
+        record.status = "completed";
+        record.current_owner = null;
+
+        break;
+      }
+
+      /*
+      ================================================
+      3. ESCALATION → HANDOVER (WITH SLA)
+      ================================================
+      */
+      case "escalation": {
+        const { notes } = req.body;
+
+        if (!nurseSession.data?.nurseDecision?.escalation) {
+          throw new Error("Escalation must be set in validation stage");
+        }
+
+        const SLA_MINUTES = 5;
+
+        nurseSession.data.nurseDecision = {
+          ...nurseSession.data.nurseDecision,
+          notes,
+          escalation: true,
+          timestamp: new Date()
+        };
+
+        // 🔥 HANDOVER STATE
+        record.status = "handover_pending";
+        record.current_owner = "system";
+
+        record.handoverStartedAt = new Date();
+        record.slaDeadline = new Date(Date.now() + SLA_MINUTES * 60000);
+
+        // ⚠️ DO NOT COMPLETE SESSION YET
+        nurseSession.status = "handover_pending";
+
+        break;
+      }
+
+      default:
+        throw new Error("Invalid stage");
+    }
+
+    const cleaned = cleanBeforeSave(record);
+
+    const updated = await updateEncounterDB(id, cleaned, record.status);
 
     return res.json({
       status: updated.status,
@@ -324,7 +462,6 @@ export const nurseAssessmentHandler = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
-
 /*
 ================================================
 DOCTOR FLOW
