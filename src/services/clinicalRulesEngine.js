@@ -1,230 +1,218 @@
-/*
-
-CLINICAL SAFETY ENGINE (PRODUCTION-STABLE MVP)
-
-PURPOSE:
-
-- Analyze vitals + symptoms together
-- Ensure NO false "missing data"
-- Deterministic + explainable
-- Robust against inconsistent payload structures
-  ================================================
-  */
+// src/services/clinicalRulesEngine.js
 
 export function evaluateClinicalState(data = {}) {
-/*
 
-🔧 NORMALIZE INPUT (CRITICAL FIX)
+  // ========================================
+  // 🔹 INTAKE NORMALIZATION (NEW)
+  // ========================================
 
-*/
+  const intake = data.intake || {};
 
-// Handle nested vitals (future + backward safe)
-const vitalsSource =
-data.vitals?.vitals || // nested
-data.vitals || // direct
-{};
+  const age = parseInt(intake?.patient?.age) || null;
+  const pregnant = intake?.medical?.pregnant === true;
+  const immunocompromised =
+    intake?.medical?.immunocompromised === true;
 
-// =========================
-// 🔥 NORMALIZED VITALS (FIXED)
-// =========================
-const heartRate =
-vitalsSource.heart_rate ||   // ✅ backend standard
-vitalsSource.heartRate ||   // fallback
-vitalsSource.hr ||
-null;
+  const chronicConditions =
+    intake?.medical?.conditions || [];
 
-const temperature =
-parseFloat(
-vitalsSource.temperature ||
-vitalsSource.temp ||
-0
-) || 0;
+  // ========================================
+  // 🔹 VITALS NORMALIZATION
+  // ========================================
 
-const bloodPressure =
-vitalsSource.blood_pressure || // ✅ backend standard
-vitalsSource.bloodPressure ||
-vitalsSource.bp ||
-"";
+  const vitalsSource =
+    data.vitals?.vitals ||
+    data.vitals ||
+    {};
 
-const oxygenSaturation =
-vitalsSource.spo2 ||              // ✅ backend standard
-vitalsSource.oxygenSaturation ||
-null;
+  const heartRate =
+    vitalsSource.heart_rate ||
+    vitalsSource.heartRate ||
+    vitalsSource.hr ||
+    null;
 
-// =========================
-// 🔹 SYMPTOMS NORMALIZATION
-// =========================
-const symptoms = Array.isArray(data.symptoms)
-? data.symptoms
-: [];
+  const temperature =
+    parseFloat(
+      vitalsSource.temperature ||
+      vitalsSource.temp ||
+      0
+    ) || 0;
 
-const normalizedSymptoms = symptoms.map(s =>
-String(s).toLowerCase()
-);
+  const bloodPressure =
+    vitalsSource.blood_pressure ||
+    vitalsSource.bloodPressure ||
+    vitalsSource.bp ||
+    "";
 
-const hasAny = (keywords) =>
-normalizedSymptoms.some(s =>
-keywords.some(k => s.includes(k))
-);
+  const oxygenSaturation =
+    vitalsSource.spo2 ||
+    vitalsSource.oxygenSaturation ||
+    null;
 
-/*
+  // ========================================
+  // 🔹 SYMPTOMS
+  // ========================================
 
-🧠 INITIAL STATE
+  const symptoms = Array.isArray(data.symptoms)
+    ? data.symptoms
+    : [];
 
-*/
+  const normalizedSymptoms = symptoms.map(s =>
+    String(s).toLowerCase()
+  );
 
-let severity = "low";
-let autoDecision = null;
-let triggers = [];
+  const hasAny = (keywords) =>
+    normalizedSymptoms.some(s =>
+      keywords.some(k => s.includes(k))
+    );
 
-/*
+  // ========================================
+  // 🧠 BASE STATE
+  // ========================================
 
-🚨 CARDIAC EMERGENCY
+  let severity = "low";
+  let autoDecision = null;
+  let triggers = [];
 
-*/
-if (
-hasAny(["chest pain"]) &&
-hasAny([
-"shortness of breath",
-"difficulty breathing",
-"breathless"
-])
-) {
-severity = "critical";
-triggers.push("cardiac_emergency");
-}
+  // ========================================
+  // 🚨 CORE RULES (UNCHANGED)
+  // ========================================
 
-/*
-
-🧠 NEURO EMERGENCY
-
-*/
-if (
-hasAny([
-"unconscious",
-"seizure",
-"not responding"
-])
-) {
-severity = "critical";
-triggers.push("neuro_emergency");
-}
-
-/*
-
-🫁 RESPIRATORY DISTRESS
-
-*/
-if (
-hasAny([
-"shortness of breath",
-"difficulty breathing",
-"breathless"
-])
-) {
-if (severity !== "critical") severity = "high";
-triggers.push("respiratory_distress");
-}
-
-/*
-
-🌡️ SEPSIS (TEMP BASED)
-
-*/
-if (temperature >= 39) {
-if (severity !== "critical") severity = "high";
-triggers.push("possible_sepsis");
-}
-
-/*
-
-❤️ HYPERTENSIVE CRISIS
-
-*/
-if (bloodPressure && bloodPressure.includes("/")) {
-const [sys, dia] = bloodPressure
-.split("/")
-.map(Number);
-
-if (sys >= 180 || dia >= 120) {
-  if (severity !== "critical") severity = "high";
-  triggers.push("hypertensive_crisis");
-}
-
-}
-
-/*
-
-🩸 TRAUMA / BLEEDING
-
-*/
-if (
-hasAny([
-"bleeding",
-"severe bleeding",
-"injury",
-"trauma"
-])
-) {
-if (severity !== "critical") severity = "high";
-triggers.push("trauma_bleeding");
-}
-
-/*
-
-🤰 PREGNANCY FLAG
-
-*/
-if (hasAny(["pregnant"])) {
-triggers.push("pregnancy_flag");
-}
-
-/*
-
-🧠 DATA COMPLETENESS CHECK (FIXED)
-
-*/
-
-const missingData = [];
-
-if (!heartRate) missingData.push("heart rate");
-if (!temperature) missingData.push("temperature");
-if (!bloodPressure) missingData.push("blood pressure");
-
-// IMPORTANT:
-// Missing data should NOT reduce severity
-// Only informs clinician awareness
-
-/*
-
-🚑 ESCALATION DECISION
-
-*/
-
-if (severity === "high" || severity === "critical") {
-autoDecision = {
-type: "doctor_escalation",
-reason: triggers,
-priority: severity
-};
-}
-
-/*
-
-✅ FINAL OUTPUT
-
-*/
-
-return {
-severity,
-autoDecision,
-triggers,
-missingData,
-extractedVitals: {
-heartRate,
-temperature,
-bloodPressure,
-oxygenSaturation
-}
-};
+  if (
+    hasAny(["chest pain"]) &&
+    hasAny([
+      "shortness of breath",
+      "difficulty breathing",
+      "breathless"
+    ])
+  ) {
+    severity = "critical";
+    triggers.push("cardiac_emergency");
   }
+
+  if (
+    hasAny([
+      "unconscious",
+      "seizure",
+      "not responding"
+    ])
+  ) {
+    severity = "critical";
+    triggers.push("neuro_emergency");
+  }
+
+  if (
+    hasAny([
+      "shortness of breath",
+      "difficulty breathing",
+      "breathless"
+    ])
+  ) {
+    if (severity !== "critical") severity = "high";
+    triggers.push("respiratory_distress");
+  }
+
+  if (temperature >= 39) {
+    if (severity !== "critical") severity = "high";
+    triggers.push("possible_sepsis");
+  }
+
+  if (bloodPressure && bloodPressure.includes("/")) {
+    const [sys, dia] = bloodPressure
+      .split("/")
+      .map(Number);
+
+    if (sys >= 180 || dia >= 120) {
+      if (severity !== "critical") severity = "high";
+      triggers.push("hypertensive_crisis");
+    }
+  }
+
+  if (
+    hasAny([
+      "bleeding",
+      "severe bleeding",
+      "injury",
+      "trauma"
+    ])
+  ) {
+    if (severity !== "critical") severity = "high";
+    triggers.push("trauma_bleeding");
+  }
+
+  // ========================================
+  // ⚠️ RISK MODIFIERS (NEW — CRITICAL LAYER)
+  // ========================================
+
+  const riskFlags = [];
+
+  // 👶 AGE RISK
+  if (age !== null) {
+    if (age < 5 || age > 65) {
+      riskFlags.push("age_risk");
+
+      if (severity === "medium") severity = "high";
+      else if (severity === "high") severity = "critical";
+    }
+  }
+
+  // 🤰 PREGNANCY
+  if (pregnant) {
+    riskFlags.push("pregnancy");
+
+    if (severity === "medium") severity = "high";
+  }
+
+  // 🧬 IMMUNOCOMPROMISED
+  if (immunocompromised) {
+    riskFlags.push("immunocompromised");
+
+    if (severity === "medium") severity = "high";
+    else if (severity === "high") severity = "critical";
+  }
+
+  // 🫀 CHRONIC CONDITIONS
+  if (chronicConditions.length > 0) {
+    riskFlags.push("chronic_conditions");
+  }
+
+  // ========================================
+  // 🧠 DATA COMPLETENESS
+  // ========================================
+
+  const missingData = [];
+
+  if (!heartRate) missingData.push("heart rate");
+  if (!temperature) missingData.push("temperature");
+  if (!bloodPressure) missingData.push("blood pressure");
+
+  // ========================================
+  // 🚑 ESCALATION
+  // ========================================
+
+  if (severity === "high" || severity === "critical") {
+    autoDecision = {
+      type: "doctor_escalation",
+      reason: [...triggers, ...riskFlags],
+      priority: severity
+    };
+  }
+
+  // ========================================
+  // ✅ OUTPUT
+  // ========================================
+
+  return {
+    severity,
+    autoDecision,
+    triggers,
+    riskFlags,
+    missingData,
+    extractedVitals: {
+      heartRate,
+      temperature,
+      bloodPressure,
+      oxygenSaturation
+    }
+  };
+}
