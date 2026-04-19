@@ -1,39 +1,56 @@
+// src/services/clinicalDecision.service.js
+
 import { evaluateClinicalState } from "./clinicalRulesEngine.js";
 import { runClinicalAI } from "./clinicalAI.js";
 
-export async function evaluateEncounter({ vitals, symptoms, notes }) {
+export async function evaluateEncounter(encounterData = {}) {
 
-  // =========================
-  // 🔥 NORMALIZE INPUT (CRITICAL FIX)
-  // =========================
-  const normalizedVitals = vitals?.vitals || vitals;
+  const {
+    intake = {},
+    vitals = {},
+    symptoms = [],
+    notes = ""
+  } = encounterData;
 
-  // =========================
+  // ========================================
+  // 🔹 NORMALIZATION (STRICT)
+  // ========================================
+
+  const normalizedVitals = vitals?.vitals || vitals || {};
+  const normalizedSymptoms = Array.isArray(symptoms) ? symptoms : [];
+  const normalizedNotes = notes || "";
+
+  // ========================================
   // 🛡️ RULES ENGINE (PRIMARY SAFETY)
-  // =========================
+  // ========================================
+
   const rules = evaluateClinicalState({
     vitals: normalizedVitals,
-    symptoms
+    symptoms: normalizedSymptoms,
+    intake
   });
 
-  // =========================
-  // 🧠 AI ENGINE (ASSISTIVE)
-  // =========================
+  // ========================================
+  // 🧠 AI ENGINE (CONTEXT-AWARE)
+  // ========================================
+
   const ai = await runClinicalAI({
     vitals: normalizedVitals,
-    symptoms,
-    notes
+    symptoms: normalizedSymptoms,
+    notes: normalizedNotes,
+    intake
   });
 
-  // =========================
-  // 🔥 FUSION LOGIC (NO DOWNGRADE)
-  // =========================
-  let finalSeverity = "LOW";
+  // ========================================
+  // 🔥 FUSION LOGIC (SAFE + TRACEABLE)
+  // ========================================
 
   const normalize = (level) => level?.toUpperCase();
 
   const ruleSeverity = normalize(rules?.severity);
   const aiSeverity = normalize(ai?.riskLevel);
+
+  let finalSeverity = "LOW";
 
   if (ruleSeverity === "CRITICAL") {
     finalSeverity = "CRITICAL";
@@ -41,19 +58,43 @@ export async function evaluateEncounter({ vitals, symptoms, notes }) {
     finalSeverity = "HIGH";
   } else if (ruleSeverity === "MEDIUM" || aiSeverity === "MEDIUM") {
     finalSeverity = "MEDIUM";
-  } else {
-    finalSeverity = "LOW";
   }
 
-  // =========================
-  // 📦 RETURN UNIFIED DECISION
-  // =========================
+  // ========================================
+  // ⚠️ DISAGREEMENT TRACKING (IMPORTANT)
+  // ========================================
+
+  const disagreement =
+    ruleSeverity !== aiSeverity
+      ? {
+          rule: ruleSeverity,
+          ai: aiSeverity
+        }
+      : null;
+
+  // ========================================
+  // 🚨 ESCALATION LOGIC (FOR NURSE ENGINE)
+  // ========================================
+
+  const escalation =
+    finalSeverity === "HIGH" || finalSeverity === "CRITICAL";
+
+  // ========================================
+  // 📦 RETURN (ALIGNED WITH NURSE ENGINE)
+  // ========================================
+
   return {
     ai,
     rules,
     finalSeverity,
+
     triage: {
-      severity: finalSeverity
+      severity: finalSeverity,
+      escalation
+    },
+
+    meta: {
+      disagreement
     }
   };
 }
