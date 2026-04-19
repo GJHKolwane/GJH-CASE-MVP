@@ -11,10 +11,12 @@ import {
   doctorConsultationHandler,
   doctorNotesHandler,
   doctorDecisionHandler,
+  doctorClaimHandler,              // ✅ NEW
   getEncounterHandler,
   getEncounterTimelineHandler
 } from "../controllers/encounterController.js";
 
+// ⚠️ TEMP — legacy (remove later if unused)
 import nurseDecisionHandler from "../controllers/nurseDecisionHandler.js";
 
 const router = express.Router();
@@ -50,18 +52,28 @@ router.post("/:id/symptoms", addSymptomsHandler);
 
 /*
 ================================================
-NURSE + VALIDATION
+NURSE ENGINE (NEW SYSTEM)
 ================================================
 */
 router.post("/:id/nurse", nurseAssessmentHandler);
+
+/*
+⚠️ LEGACY — REMOVE AFTER FRONTEND MIGRATION
+*/
 router.post("/:id/nurse-decision", nurseDecisionHandler);
-router.post("/:id/validate", validateEncounterHandler); // ✅ BACK
+
+router.post("/:id/validate", validateEncounterHandler);
 
 /*
 ================================================
-DOCTOR FLOW (FULL RESTORED)
+DOCTOR FLOW (HANDOVER + ACTIVE WORK)
 ================================================
 */
+
+// 🔥 HANDOVER CLAIM (NEW — CRITICAL)
+router.post("/:id/claim", doctorClaimHandler);
+
+// ⚠️ LEGACY DOCTOR FLOW (WILL BE REPLACED NEXT)
 router.post("/:id/doctor", doctorConsultationHandler);
 router.post("/:id/doctor_notes", doctorNotesHandler);
 router.post("/:id/doctor_decision", doctorDecisionHandler);
