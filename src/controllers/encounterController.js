@@ -682,8 +682,49 @@ export const nurseAssessmentHandler = async (req, res) => {
 /*
 
 /*
+
+/*
 ================================================
-DOCTOR ENGINE (SESSION-BASED — HANDOVER ALIGNED)
+🧠 DOCTOR SEGMENT (FULL — FINAL CLEAN BLOCK)
+================================================
+Includes:
+- ensureDecision (fixed)
+- doctorConsultationHandler
+- doctorWorkHandler (SOAN aligned)
+================================================
+*/
+
+
+/*
+================================================
+🛡️ ENSURE DECISION (FIXED)
+================================================
+*/
+const ensureDecision = async (data) => {
+  const ed = data.encounter_data || {};
+
+  if (!ed.decision) {
+    const decision = await evaluateEncounter(ed);
+
+    ed.decision = decision;
+    ed.finalSeverity = decision.finalSeverity;
+    ed.rules = decision.rules;
+
+    data.timeline = [
+      ...(data.timeline || []),
+      {
+        event: "🛡️ Decision engine fallback executed",
+        timestamp: new Date().toISOString()
+      }
+    ];
+  }
+
+  return data;
+};
+
+/*
+================================================
+👨‍⚕️ DOCTOR CONSULTATION (OPEN CASE)
 ================================================
 */
 export const doctorConsultationHandler = async (req, res) => {
@@ -700,16 +741,12 @@ export const doctorConsultationHandler = async (req, res) => {
 
     record.encounter_data = record.encounter_data || {};
 
-    // ====================================================
-    // 🔒 ONLY ALLOW ACCESS AFTER CLAIM
-    // ====================================================
+    // 🔒 MUST BE CLAIMED FIRST
     if (record.status !== "doctor_active") {
       throw new Error("Doctor must claim case before consultation");
     }
 
-    // ====================================================
-    // 🧠 ENSURE DOCTOR SESSION EXISTS
-    // ====================================================
+    // 🔒 SESSION MUST EXIST
     if (!record.encounter_data.doctorSession) {
       throw new Error("Doctor session not initialized");
     }
@@ -720,14 +757,10 @@ export const doctorConsultationHandler = async (req, res) => {
       throw new Error("Doctor session already completed");
     }
 
-    // ====================================================
-    // 🧾 OPTIONAL SAFETY DECISION (KEEP AI FALLBACK)
-    // ====================================================
+    // 🧠 ENSURE DECISION EXISTS
     record = await ensureDecision(record);
 
-    // ====================================================
-    // 🔄 MARK ACTIVE INTERACTION
-    // ====================================================
+    // 🧾 TIMELINE
     record.timeline = [
       ...(record.timeline || []),
       {
@@ -736,16 +769,14 @@ export const doctorConsultationHandler = async (req, res) => {
       }
     ];
 
-    // ====================================================
-    // 💾 SAVE (NO STATE CHANGE YET)
-    // ====================================================
+    // 💾 SAVE
     const cleaned = cleanBeforeSave(record);
-
     const updated = await updateEncounterDB(id, cleaned, record.status);
 
     return res.json({
       status: updated.status,
-      encounter: sanitizeResponse(updated)
+      encounter: sanitizeResponse(updated),
+      decision: record.encounter_data.decision
     });
 
   } catch (err) {
@@ -756,89 +787,7 @@ export const doctorConsultationHandler = async (req, res) => {
 
 /*
 ================================================
-GET + TIMELINE
-================================================
-*/
-export const getEncounterHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    trace("get", id);
-
-    const record = await getEncounterDB(id);
-
-    if (!record) {
-      return res.status(404).json({ error: "Encounter not found" });
-    }
-
-    return res.json({
-      status: record.status,
-      encounter: sanitizeResponse(record)
-    });
-
-  } catch (err) {
-    console.error("GET ERROR:", err);
-    return res.status(500).json({ error: "Fetch failed" });
-  }
-};
-
-export const getEncounterTimelineHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    trace("timeline", id);
-
-    const record = await getEncounterDB(id);
-
-    return res.json({
-      status: record.status,
-      encounter: sanitizeResponse(record),
-      timeline: record.timeline || []
-    });
-
-  } catch (err) {
-    console.error("TIMELINE ERROR:", err);
-    return res.status(500).json({ error: "Timeline fetch failed" });
-  }
-};
-
-/*
-================================================
-VALIDATE (CLINICAL GOVERNANCE)
-================================================
-*/
-export const validateEncounterHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    trace("validate", id);
-
-    let record = await getEncounterDB(id);
-
-    record = await ensureDecision(record);
-
-    const updatedData = await processCaseState(record, "validate", {});
-
-    const cleaned = cleanBeforeSave(updatedData);
-
-    const updated = await updateEncounterDB(id, cleaned, cleaned.status);
-
-    return res.json({
-      status: updated.status,
-      encounter: sanitizeResponse(updated)
-    });
-
-  } catch (err) {
-    console.error("VALIDATE ERROR:", err);
-    res.status(400).json({ error: err.message });
-  }
-};
-
-/*
-
-/*
-================================================
-DOCTOR ENGINE (STAGE BASED — FINAL)
+👨‍⚕️ DOCTOR ENGINE (SOAN + FINAL DECISION)
 ================================================
 */
 export const doctorWorkHandler = async (req, res) => {
@@ -856,7 +805,7 @@ export const doctorWorkHandler = async (req, res) => {
 
     record.encounter_data = record.encounter_data || {};
 
-    // 🔒 ONLY ALLOW AFTER CLAIM
+    // 🔒 MUST BE ACTIVE
     if (record.status !== "doctor_active") {
       throw new Error("Doctor must claim case first");
     }
@@ -871,6 +820,12 @@ export const doctorWorkHandler = async (req, res) => {
       throw new Error("Doctor session already completed");
     }
 
+    // 🧠 ENSURE DECISION CONTEXT
+    record = await ensureDecision(record);
+
+    const decision = record.encounter_data.decision || {};
+    const severity = decision.triage?.severity || "UNKNOWN";
+
     // ====================================================
     // 🧠 STAGE SWITCH
     // ====================================================
@@ -878,23 +833,28 @@ export const doctorWorkHandler = async (req, res) => {
 
       /*
       ================================================
-      1. NOTES / SOAN BUILD
+      1. SOAN BUILD
       ================================================
       */
       case "notes": {
-        const { notes, diagnosis } = req.body;
+        const { subjective, objective, assessment } = req.body;
 
         doctorSession.data = {
           ...doctorSession.data,
-          notes,
-          diagnosis,
+          soan: {
+            subjective,
+            objective,
+            assessment
+          },
+          severityAtReview: severity,
           timestamp: new Date()
         };
 
         record.timeline = [
           ...(record.timeline || []),
           {
-            event: "📝 Doctor added notes",
+            event: "📝 Doctor built SOAN",
+            severity,
             timestamp: new Date().toISOString()
           }
         ];
@@ -904,7 +864,7 @@ export const doctorWorkHandler = async (req, res) => {
 
       /*
       ================================================
-      2. DECISION (FINAL AUTHORITY)
+      2. FINAL DECISION
       ================================================
       */
       case "decision": {
@@ -915,11 +875,10 @@ export const doctorWorkHandler = async (req, res) => {
           closeCase
         } = req.body;
 
-        if (!doctorSession.data?.notes) {
-          throw new Error("Doctor notes required before decision");
+        if (!doctorSession.data?.soan) {
+          throw new Error("SOAN must be completed first");
         }
 
-        // 🔐 VALIDATION
         if (!treatment) throw new Error("Treatment required");
 
         if (followUpRequired && !appointmentDate) {
@@ -958,8 +917,9 @@ export const doctorWorkHandler = async (req, res) => {
           ...(record.timeline || []),
           {
             event: followUpRequired
-              ? "📅 Doctor completed + follow-up scheduled"
+              ? "📅 Doctor completed + follow-up"
               : "✅ Doctor completed + case closed",
+            severity,
             timestamp: new Date().toISOString()
           }
         ];
@@ -971,11 +931,8 @@ export const doctorWorkHandler = async (req, res) => {
         throw new Error("Invalid stage");
     }
 
-    // ====================================================
     // 💾 SAVE
-    // ====================================================
     const cleaned = cleanBeforeSave(record);
-
     const updated = await updateEncounterDB(id, cleaned, record.status);
 
     return res.json({
