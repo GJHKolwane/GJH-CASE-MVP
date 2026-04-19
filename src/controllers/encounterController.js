@@ -616,7 +616,105 @@ export const nurseAssessmentHandler = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
+/*
+================================================
+DOCTOR CLAIM (HANDOVER SAFE — NO WHITE WALL)
+================================================
+*/
+export const doctorClaimHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
 
+    trace("doctor_claim", id);
+
+    let record = await getEncounterDB(id);
+
+    if (!record) {
+      return res.status(404).json({ error: "Encounter not found" });
+    }
+
+    // 🔒 ONLY ALLOW CLAIM FROM HANDOVER STATES
+    if (
+      record.status !== "handover_pending" &&
+      record.status !== "critical_alert"
+    ) {
+      throw new Error("Case not available for claim");
+    }
+
+    record.encounter_data = record.encounter_data || {};
+
+    const nurseSession = record.encounter_data.nurseSession;
+
+    if (!nurseSession || nurseSession.status !== "handover_pending") {
+      throw new Error("Invalid nurse session state");
+    }
+
+    // ====================================================
+    // 👨‍⚕️ ASSIGN DOCTOR
+    // ====================================================
+    const doctorId = req.user?.id || "doctor_1"; // temp fallback
+
+    record.doctor = {
+      id: doctorId,
+      assignedAt: new Date()
+    };
+
+    // ====================================================
+    // 🔄 TRANSITION STATE
+    // ====================================================
+    record.status = "doctor_active";
+    record.current_owner = "doctor";
+
+    // ====================================================
+    // ✅ CLOSE NURSE SESSION (SAFE POINT)
+    // ====================================================
+    nurseSession.status = "completed";
+    nurseSession.completedAt = new Date();
+
+    // ====================================================
+    // 🆕 CREATE DOCTOR SESSION
+    // ====================================================
+    record.encounter_data.doctorSession = {
+      status: "active",
+      startedAt: new Date(),
+      completedAt: null,
+      data: {}
+    };
+
+    // ====================================================
+    // 🧾 TIMELINE (AUDIT TRAIL)
+    // ====================================================
+    record.timeline = [
+      ...(record.timeline || []),
+      {
+        event: "👨‍⚕️ Doctor claimed case (handover completed)",
+        doctorId,
+        timestamp: new Date().toISOString()
+      }
+    ];
+
+    // ====================================================
+    // 🧼 CLEAN SLA FLAGS (OPTIONAL BUT GOOD)
+    // ====================================================
+    record.slaBreached = false;
+
+    // ====================================================
+    // 💾 SAVE
+    // ====================================================
+    const cleaned = cleanBeforeSave(record);
+
+    const updated = await updateEncounterDB(id, cleaned, record.status);
+
+    return res.json({
+      status: updated.status,
+      encounter: sanitizeResponse(updated)
+    });
+
+  } catch (err) {
+    console.error("DOCTOR CLAIM ERROR:", err);
+    res.status(400).json({ error: err.message });
+  }
+};
         
 /*
 ================================================
