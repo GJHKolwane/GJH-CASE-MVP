@@ -456,6 +456,7 @@ export const validateEncounterHandler = async (req, res) => {
 NURSE ENGINE
 ================================================
 */
+
 export const nurseAssessmentHandler = async (req, res) => {
   try {
     const { id } = req.params;
@@ -464,8 +465,17 @@ export const nurseAssessmentHandler = async (req, res) => {
     trace("nurse", id);
 
     let record = await getEncounterDB(id);
+
+    if (!record) {
+      return res.status(404).json({ error: "Not found" });
+    }
+
+    // 🧠 Ensure decision exists
     record = await ensureDecision(record);
 
+    record.encounter_data = record.encounter_data || {};
+
+    // 🧾 Ensure nurse session exists
     record.encounter_data.nurseSession =
       record.encounter_data.nurseSession || {
         status: "active",
@@ -474,74 +484,68 @@ export const nurseAssessmentHandler = async (req, res) => {
 
     const session = record.encounter_data.nurseSession;
 
+    let nextState = null;
+
     switch (stage) {
       case "validation":
+        nextState = "nurse_validated";
+
+        // 🔐 GOVERNANCE
+        assertValidTransition(record.status, nextState);
+
         session.data.validation = req.body;
-        record.status = "nurse_validated";
         break;
 
       case "completion":
+        nextState = "completed";
+
+        // 🔐 GOVERNANCE
+        assertValidTransition(record.status, nextState);
+
         session.status = "completed";
-        record.status = "completed";
         break;
 
       case "escalation":
+        nextState = "handover_pending";
+
+        // 🔐 GOVERNANCE
+        assertValidTransition(record.status, nextState);
+
         session.status = "handover";
-        record.status = "handover_pending";
         break;
 
       default:
         throw new Error("Invalid stage");
     }
 
+    // 🧾 HISTORY (AUDIT)
+    const updatedEncounterData = appendStateHistory(
+      record,
+      record.status,
+      nextState,
+      "nurse"
+    );
+
+    // 💾 SAFE MERGE
+    record.encounter_data = {
+      ...updatedEncounterData,
+      nurseSession: session
+    };
+
+    // 🔄 STATE UPDATE
+    record.status = nextState;
+
+    // 🕒 TIMELINE
     record.timeline.push({
       event: `👩‍⚕️ Nurse stage: ${stage}`,
       timestamp: new Date().toISOString()
     });
 
-    const updated = await updateEncounterDB(id, record, record.status);
-
-    res.json({
-      status: updated.status,
-      encounter: sanitizeResponse(updated)
-    });
-
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-/*
-================================================
-DOCTOR CLAIM
-================================================
-*/
-export const doctorClaimHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    trace("doctor_claim", id);
-
-    let record = await getEncounterDB(id);
-
-    if (record.status !== "handover_pending") {
-      throw new Error("Not ready for doctor");
-    }
-
-    record.encounter_data.doctorSession = {
-      status: "active",
-      data: {}
-    };
-
-    record.status = "doctor_active";
-    record.current_owner = "doctor";
-
-    record.timeline.push({
-      event: "👨‍⚕️ Doctor claimed case",
-      timestamp: new Date().toISOString()
-    });
-
-    const updated = await updateEncounterDB(id, record, record.status);
+    const updated = await updateEncounterDB(
+      id,
+      cleanBeforeSave(record),
+      record.status
+    );
 
     res.json({
       status: updated.status,
