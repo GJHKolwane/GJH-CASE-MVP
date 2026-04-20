@@ -396,21 +396,50 @@ export const validateEncounterHandler = async (req, res) => {
     trace("validate", id);
 
     let record = await getEncounterDB(id);
+
+    if (!record) {
+      return res.status(404).json({ error: "Not found" });
+    }
+
+    // 🧠 Ensure decision exists (safety net)
     record = await ensureDecision(record);
 
-    record.encounter_data.validation = {
-      notes: req.body?.notes || null,
-      timestamp: new Date()
+    record.encounter_data = record.encounter_data || {};
+
+    // 🔐 GOVERNANCE (symptoms_recorded → validated)
+    assertValidTransition(record.status, "validated");
+
+    // 🧾 HISTORY (AUDIT)
+    const updatedEncounterData = appendStateHistory(
+      record,
+      record.status,
+      "validated",
+      "nurse" // human checkpoint
+    );
+
+    // 💾 SAFE MERGE
+    record.encounter_data = {
+      ...updatedEncounterData,
+      validation: {
+        notes: req.body?.notes || null,
+        timestamp: new Date()
+      }
     };
 
+    // 🔄 STATE UPDATE
     record.status = "validated";
 
+    // 🕒 TIMELINE
     record.timeline.push({
       event: "✅ Human validation completed",
       timestamp: new Date().toISOString()
     });
 
-    const updated = await updateEncounterDB(id, record, record.status);
+    const updated = await updateEncounterDB(
+      id,
+      cleanBeforeSave(record),
+      record.status
+    );
 
     res.json({
       status: updated.status,
