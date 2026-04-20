@@ -434,7 +434,7 @@ export const nurseAssessmentHandler = async (req, res) => {
         }
 
         // ✅ COMPLETE
-
+/*
 ================================================
 NURSE ENGINE (FINAL — STAGE BASED + HANDOVER SAFE)
 ================================================
