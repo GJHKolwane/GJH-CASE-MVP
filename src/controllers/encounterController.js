@@ -180,16 +180,43 @@ export const intakeHandler = async (req, res) => {
 
     let record = await getEncounterDB(id);
 
-    record = await processCaseState(record, "intake", {
-      intake: req.body.intake
-    });
+    if (!record) {
+      return res.status(404).json({ error: "Not found" });
+    }
 
+    record.encounter_data = record.encounter_data || {};
+
+    // 🔐 GOVERNANCE (created → intake)
+    assertValidTransition(record.status, "intake");
+
+    // 🧾 HISTORY (AUDIT)
+    const updatedEncounterData = appendStateHistory(
+      record,
+      record.status,
+      "intake",
+      "system"
+    );
+
+    // 🧠 BUSINESS LOGIC (simple + explicit)
+    record.encounter_data = {
+      ...updatedEncounterData,
+      intake: req.body.intake || {}
+    };
+
+    // 🔄 STATE UPDATE
+    record.status = "intake";
+
+    // 🕒 TIMELINE (human-readable)
     record.timeline.push({
       event: "📝 Intake captured",
       timestamp: new Date().toISOString()
     });
 
-    const updated = await updateEncounterDB(id, cleanBeforeSave(record), record.status);
+    const updated = await updateEncounterDB(
+      id,
+      cleanBeforeSave(record),
+      record.status
+    );
 
     res.json({
       status: updated.status,
