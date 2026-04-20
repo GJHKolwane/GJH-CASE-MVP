@@ -28,21 +28,22 @@ function ensureObject(data) {
 function sanitizeEncounterData(data) {
   const clean = ensureObject(data);
 
-  // ✅ Only clean INSIDE encounter_data (correct layer)
   if (clean.encounter_data) {
     delete clean.encounter_data.routing;
     delete clean.encounter_data.escalation;
-  }
 
-  // ❗ DO NOT delete root routing/escalation anymore
-  // They belong to RESPONSE layer
+    // 🔒 Protect history structure
+    if (!Array.isArray(clean.encounter_data.history)) {
+      clean.encounter_data.history = [];
+    }
+  }
 
   return clean;
 }
 
 /*
 ================================================
-CREATE
+CREATE (ALIGNED WITH GOVERNANCE MODEL)
 ================================================
 */
 export async function createEncounterDB(payload) {
@@ -60,26 +61,38 @@ export async function createEncounterDB(payload) {
         name: payload.patient_data?.name || "Unknown Patient",
         national_id: payload.national_id || null
       },
+
+      intake: null,
       vitals: null,
       symptoms: null,
-      notes: null,
-      triage: null,
-      timeline: [
+
+      ai: {},
+      decision: {},
+      validation: {},
+
+      nurseSession: {},
+      doctorSession: {},
+
+      appointment: null,
+
+      history: [
         {
-          event: "🆕 Encounter created",
+          from: null,
+          to: "created",
+          actor: "system",
           timestamp: new Date().toISOString()
         }
       ]
     };
 
-    const cleanData = sanitizeEncounterData(initialData);
+    const cleanData = sanitizeEncounterData({ encounter_data: initialData });
 
     const res = await query(
       `INSERT INTO encounters 
        (id, encounter_data, status)
        VALUES ($1::uuid, $2::jsonb, $3)
        RETURNING *`,
-      [id, cleanData, payload.status || "created"]
+      [id, cleanData.encounter_data, payload.status || "created"]
     );
 
     return sanitizeEncounterData(res.rows[0]);
@@ -101,14 +114,10 @@ export async function getEncounterDB(id) {
       throw new Error("Invalid UUID provided to getEncounterDB");
     }
 
-    console.log("🔍 DB FETCH ID:", id);
-
     const res = await query(
       `SELECT * FROM encounters WHERE id = $1::uuid`,
       [id]
     );
-
-    console.log("📦 DB RESULT:", res.rows);
 
     if (!res.rows[0]) {
       throw new Error("Encounter not found");
@@ -121,9 +130,10 @@ export async function getEncounterDB(id) {
     throw err;
   }
 }
+
 /*
 ================================================
-UPDATE (FINAL FIX)
+UPDATE (SAFE MERGE + HISTORY ENFORCEMENT)
 ================================================
 */
 export async function updateEncounterDB(id, data, status) {
@@ -132,10 +142,26 @@ export async function updateEncounterDB(id, data, status) {
       throw new Error("Invalid UUID provided to updateEncounterDB");
     }
 
-    const safeData = ensureObject(data);
+    const existing = await getEncounterDB(id);
 
-    // 🔥 SANITIZE FOR STORAGE ONLY
-    const cleanData = sanitizeEncounterData(safeData);
+    const existingData = ensureObject(existing.encounter_data);
+    const incomingData = ensureObject(data);
+
+    // 🔥 SAFE MERGE (NO OVERWRITE)
+    const merged = {
+      ...existingData,
+      ...incomingData
+    };
+
+    // 🔒 HISTORY ENFORCEMENT (APPEND ONLY)
+    merged.history = [
+      ...(existingData.history || []),
+      ...(incomingData.history || [])
+    ];
+
+    const cleanData = sanitizeEncounterData({
+      encounter_data: merged
+    });
 
     const res = await query(
       `UPDATE encounters 
@@ -145,8 +171,8 @@ export async function updateEncounterDB(id, data, status) {
        WHERE id = $3::uuid
        RETURNING *`,
       [
-        cleanData,
-        status || "updated",
+        cleanData.encounter_data,
+        status || existing.status || "updated",
         id
       ]
     );
@@ -158,12 +184,12 @@ export async function updateEncounterDB(id, data, status) {
 
     const dbRecord = sanitizeEncounterData(res.rows[0]);
 
-    // 🔥 CRITICAL: RE-ATTACH COMPUTED FIELDS (NOT STORED)
+    // 🔥 RESPONSE LAYER (NOT STORED IN DB)
     return {
       ...dbRecord,
-      routing: data.routing || null,
-      escalation: data.escalation || null,
-      doctor: data.doctor || null
+      routing: incomingData.routing || null,
+      escalation: incomingData.escalation || null,
+      doctor: incomingData.doctor || null
     };
 
   } catch (err) {
@@ -174,7 +200,7 @@ export async function updateEncounterDB(id, data, status) {
 
 /*
 ================================================
-PATCH FIELD
+PATCH FIELD (LIGHTWEIGHT UPDATE)
 ================================================
 */
 export async function patchEncounterField(id, field, value) {
@@ -252,4 +278,4 @@ export async function checkDBConnection() {
     console.error("❌ DB CONNECTION ERROR:", err);
     throw err;
   }
-}
+      }
