@@ -1,6 +1,6 @@
 import express from "express";
 import cors from "cors";
-import queryRoutes from "./src/routes/queryRoutes.js";
+import queryRoutes from "./routes/queryRoutes.js";
 
 import encounterRoutes from "./routes/encounterRoutes.js";
 
