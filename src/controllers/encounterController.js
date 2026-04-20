@@ -12,18 +12,13 @@ import { callAIOrchestrator } from "../services/aiOrchestrator.client.js";
 
 /*
 ================================================
-UTIL — TRACE LOGGER
+UTIL
 ================================================
 */
 const trace = (stage, id) => {
   console.log(`🧭 [${stage.toUpperCase()}] id: ${id}`);
 };
 
-/*
-================================================
-SANITIZER
-================================================
-*/
 const sanitizeResponse = (data) => {
   const clean = { ...data };
   if (clean.encounter_data) {
@@ -43,7 +38,7 @@ const cleanBeforeSave = (data) => {
 
 /*
 ================================================
-DECISION GUARD (SINGLE SOURCE 🔥)
+DECISION GUARD (AI ≠ AUTHORITY)
 ================================================
 */
 const ensureDecision = async (record) => {
@@ -84,7 +79,8 @@ export const createEncounterHandler = async (req, res) => {
       national_id: body.national_id || null,
       status: "created",
       current_state: "created",
-      encounter_data: {}
+      encounter_data: {},
+      timeline: []
     };
 
     const encounter = await createEncounterDB(normalized);
@@ -99,6 +95,50 @@ export const createEncounterHandler = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Create failed" });
+  }
+};
+
+/*
+================================================
+GET
+================================================
+*/
+export const getEncounterHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const record = await getEncounterDB(id);
+
+    if (!record) {
+      return res.status(404).json({ error: "Not found" });
+    }
+
+    res.json({
+      encounter: sanitizeResponse(record)
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/*
+================================================
+TIMELINE
+================================================
+*/
+export const getEncounterTimelineHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const record = await getEncounterDB(id);
+
+    res.json({
+      timeline: record.timeline || []
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 };
 
@@ -119,11 +159,12 @@ export const intakeHandler = async (req, res) => {
       intake: req.body.intake
     });
 
-    const updated = await updateEncounterDB(
-      id,
-      cleanBeforeSave(record),
-      record.status
-    );
+    record.timeline.push({
+      event: "📝 Intake captured",
+      timestamp: new Date().toISOString()
+    });
+
+    const updated = await updateEncounterDB(id, cleanBeforeSave(record), record.status);
 
     res.json({
       status: updated.status,
@@ -143,7 +184,6 @@ VITALS
 export const addVitalsHandler = async (req, res) => {
   try {
     const { id } = req.params;
-    const { heartRate, temperature, bloodPressure, oxygenSaturation } = req.body;
 
     trace("vitals", id);
 
@@ -152,13 +192,18 @@ export const addVitalsHandler = async (req, res) => {
     record.encounter_data = record.encounter_data || {};
 
     record.encounter_data.vitals = {
-      heart_rate: Number(heartRate) || null,
-      temperature: Number(temperature) || null,
-      blood_pressure: bloodPressure || null,
-      spo2: Number(oxygenSaturation) || null
+      heart_rate: Number(req.body.heartRate) || null,
+      temperature: Number(req.body.temperature) || null,
+      blood_pressure: req.body.bloodPressure || null,
+      spo2: Number(req.body.oxygenSaturation) || null
     };
 
     record.status = "vitals_recorded";
+
+    record.timeline.push({
+      event: "🩺 Vitals recorded",
+      timestamp: new Date().toISOString()
+    });
 
     const updated = await updateEncounterDB(id, record, record.status);
 
@@ -180,40 +225,43 @@ SYMPTOMS + AI + DECISION
 export const addSymptomsHandler = async (req, res) => {
   try {
     const { id } = req.params;
-    const { symptoms } = req.body;
 
     trace("symptoms", id);
 
     let record = await getEncounterDB(id);
     record.encounter_data = record.encounter_data || {};
 
-    const normalized =
-      typeof symptoms === "string"
-        ? symptoms.split(",").map(s => s.trim())
-        : symptoms || [];
+    const symptoms =
+      typeof req.body.symptoms === "string"
+        ? req.body.symptoms.split(",").map(s => s.trim())
+        : req.body.symptoms || [];
 
-    record.encounter_data.symptoms = normalized;
+    record.encounter_data.symptoms = symptoms;
 
     // AI (assistive only)
     try {
       const ai = await callAIOrchestrator({
-        inputText: normalized.join(", "),
+        inputText: symptoms.join(", "),
         vitals: record.encounter_data.vitals || {},
-        symptoms: normalized
+        symptoms
       });
-
       record.encounter_data.ai = ai;
     } catch {
       record.encounter_data.ai = null;
     }
 
-    // Decision (PRIMARY)
+    // Decision (PRIMARY LOGIC)
     const decision = await evaluateEncounter(record.encounter_data);
 
     record.encounter_data.decision = decision;
     record.encounter_data.finalSeverity = decision.finalSeverity;
 
     record.status = "symptoms_recorded";
+
+    record.timeline.push({
+      event: "🧠 Symptoms processed + decision generated",
+      timestamp: new Date().toISOString()
+    });
 
     const updated = await updateEncounterDB(id, record, record.status);
 
@@ -230,7 +278,45 @@ export const addSymptomsHandler = async (req, res) => {
 
 /*
 ================================================
-NURSE (VALIDATE / COMPLETE / ESCALATE)
+VALIDATE (HUMAN-IN-LOOP 🔥)
+================================================
+*/
+export const validateEncounterHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    trace("validate", id);
+
+    let record = await getEncounterDB(id);
+    record = await ensureDecision(record);
+
+    record.encounter_data.validation = {
+      notes: req.body?.notes || null,
+      timestamp: new Date()
+    };
+
+    record.status = "validated";
+
+    record.timeline.push({
+      event: "✅ Human validation completed",
+      timestamp: new Date().toISOString()
+    });
+
+    const updated = await updateEncounterDB(id, record, record.status);
+
+    res.json({
+      status: updated.status,
+      encounter: sanitizeResponse(updated)
+    });
+
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+/*
+================================================
+NURSE ENGINE
 ================================================
 */
 export const nurseAssessmentHandler = async (req, res) => {
@@ -271,6 +357,11 @@ export const nurseAssessmentHandler = async (req, res) => {
         throw new Error("Invalid stage");
     }
 
+    record.timeline.push({
+      event: `👩‍⚕️ Nurse stage: ${stage}`,
+      timestamp: new Date().toISOString()
+    });
+
     const updated = await updateEncounterDB(id, record, record.status);
 
     res.json({
@@ -285,7 +376,7 @@ export const nurseAssessmentHandler = async (req, res) => {
 
 /*
 ================================================
-DOCTOR CLAIM (🔥 MISSING PIECE FIXED)
+DOCTOR CLAIM
 ================================================
 */
 export const doctorClaimHandler = async (req, res) => {
@@ -297,7 +388,7 @@ export const doctorClaimHandler = async (req, res) => {
     let record = await getEncounterDB(id);
 
     if (record.status !== "handover_pending") {
-      throw new Error("Case not ready for doctor");
+      throw new Error("Not ready for doctor");
     }
 
     record.encounter_data.doctorSession = {
@@ -307,6 +398,11 @@ export const doctorClaimHandler = async (req, res) => {
 
     record.status = "doctor_active";
     record.current_owner = "doctor";
+
+    record.timeline.push({
+      event: "👨‍⚕️ Doctor claimed case",
+      timestamp: new Date().toISOString()
+    });
 
     const updated = await updateEncounterDB(id, record, record.status);
 
@@ -322,7 +418,41 @@ export const doctorClaimHandler = async (req, res) => {
 
 /*
 ================================================
-DOCTOR WORK (SOAN + FINAL DECISION)
+DOCTOR CONSULTATION (AUDIT)
+================================================
+*/
+export const doctorConsultationHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    trace("doctor_open", id);
+
+    let record = await getEncounterDB(id);
+
+    if (record.status !== "doctor_active") {
+      throw new Error("Doctor must claim first");
+    }
+
+    record.timeline.push({
+      event: "👨‍⚕️ Doctor opened case",
+      timestamp: new Date().toISOString()
+    });
+
+    const updated = await updateEncounterDB(id, record, record.status);
+
+    res.json({
+      status: updated.status,
+      encounter: sanitizeResponse(updated)
+    });
+
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+/*
+================================================
+DOCTOR WORK (SOAN + FINAL)
 ================================================
 */
 export const doctorWorkHandler = async (req, res) => {
@@ -330,7 +460,7 @@ export const doctorWorkHandler = async (req, res) => {
     const { id } = req.params;
     const { stage } = req.body;
 
-    trace("doctor", id);
+    trace("doctor_work", id);
 
     let record = await getEncounterDB(id);
     record = await ensureDecision(record);
@@ -355,6 +485,11 @@ export const doctorWorkHandler = async (req, res) => {
       default:
         throw new Error("Invalid stage");
     }
+
+    record.timeline.push({
+      event: `👨‍⚕️ Doctor stage: ${stage}`,
+      timestamp: new Date().toISOString()
+    });
 
     const updated = await updateEncounterDB(id, record, record.status);
 
