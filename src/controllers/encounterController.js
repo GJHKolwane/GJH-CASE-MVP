@@ -74,21 +74,52 @@ CREATE
 export const createEncounterHandler = async (req, res) => {
   try {
     const body = req.body || {};
-
     const now = new Date().toISOString();
 
-    const normalized = {
-      patient_data: {
-        name: body.patient_data?.name || body.name || "Unknown Patient"
-      },
-      national_id: body.national_id || null,
+    // ========================================
+    // 🧠 STEP 1: CREATE PATIENT (SOURCE OF TRUTH)
+    // ========================================
+    const patientId = uuidv4();
 
-      // ✅ STATE (SOURCE OF TRUTH)
+    await query(
+      `INSERT INTO patients (id, name, national_id)
+       VALUES ($1, $2, $3)`,
+      [
+        patientId,
+        body.patient_data?.name || body.name || "Unknown Patient",
+        body.national_id || null
+      ]
+    );
+
+    // ========================================
+    // 🧠 STEP 2: NORMALIZE ENCOUNTER
+    // ========================================
+    const normalized = {
+      patient_id: patientId, // 🔥 CRITICAL
+
       status: "created",
       current_state: "created",
 
-      // ✅ EMR RECORD
       encounter_data: {
+        intake: null,
+        vitals: null,
+        symptoms: null,
+
+        ai: {},
+        decision: {},
+        validation: {},
+
+        nurseSession: {},
+        doctorSession: {},
+
+        appointment: null,
+
+        ownership: {
+          owner: "system",
+          doctorId: null,
+          claimedAt: null
+        },
+
         history: [
           {
             from: null,
@@ -99,7 +130,6 @@ export const createEncounterHandler = async (req, res) => {
         ]
       },
 
-      // ✅ HUMAN-READABLE TIMELINE
       timeline: [
         {
           event: "🆕 Encounter created",
@@ -108,6 +138,9 @@ export const createEncounterHandler = async (req, res) => {
       ]
     };
 
+    // ========================================
+    // 💾 STEP 3: CREATE ENCOUNTER
+    // ========================================
     const encounter = await createEncounterDB(normalized);
 
     trace("create", encounter.id);
@@ -120,30 +153,6 @@ export const createEncounterHandler = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Create failed" });
-  }
-};
-
-/*
-================================================
-GET
-================================================
-*/
-export const getEncounterHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const record = await getEncounterDB(id);
-
-    if (!record) {
-      return res.status(404).json({ error: "Not found" });
-    }
-
-    res.json({
-      encounter: sanitizeResponse(record)
-    });
-
-  } catch (err) {
-    res.status(500).json({ error: err.message });
   }
 };
 
