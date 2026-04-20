@@ -570,16 +570,40 @@ export const doctorConsultationHandler = async (req, res) => {
 
     let record = await getEncounterDB(id);
 
+    if (!record) {
+      return res.status(404).json({ error: "Not found" });
+    }
+
     if (record.status !== "doctor_active") {
       throw new Error("Doctor must claim first");
     }
 
+    record.encounter_data = record.encounter_data || {};
+
+    // 🧾 HISTORY (AUDIT ONLY — NO STATE CHANGE)
+    const updatedEncounterData = appendStateHistory(
+      record,
+      record.status,
+      record.status, // no transition
+      "doctor_open"
+    );
+
+    // 💾 SAFE MERGE
+    record.encounter_data = {
+      ...updatedEncounterData
+    };
+
+    // 🕒 TIMELINE
     record.timeline.push({
       event: "👨‍⚕️ Doctor opened case",
       timestamp: new Date().toISOString()
     });
 
-    const updated = await updateEncounterDB(id, record, record.status);
+    const updated = await updateEncounterDB(
+      id,
+      cleanBeforeSave(record),
+      record.status
+    );
 
     res.json({
       status: updated.status,
@@ -604,7 +628,15 @@ export const doctorWorkHandler = async (req, res) => {
     trace("doctor_work", id);
 
     let record = await getEncounterDB(id);
+
+    if (!record) {
+      return res.status(404).json({ error: "Not found" });
+    }
+
+    // 🧠 Ensure decision exists (safety net)
     record = await ensureDecision(record);
+
+    record.encounter_data = record.encounter_data || {};
 
     const session = record.encounter_data.doctorSession;
 
@@ -612,14 +644,20 @@ export const doctorWorkHandler = async (req, res) => {
       throw new Error("Doctor must claim case first");
     }
 
+    let nextState = record.status; // default = no change
+
     switch (stage) {
       case "notes":
         session.data.soan = req.body;
         break;
 
       case "decision":
+        nextState = "completed";
+
+        // 🔐 GOVERNANCE (doctor_active → completed)
+        assertValidTransition(record.status, nextState);
+
         session.status = "completed";
-        record.status = "completed";
         record.current_owner = null;
         break;
 
@@ -627,12 +665,34 @@ export const doctorWorkHandler = async (req, res) => {
         throw new Error("Invalid stage");
     }
 
+    // 🧾 HISTORY (AUDIT)
+    const updatedEncounterData = appendStateHistory(
+      record,
+      record.status,
+      nextState,
+      "doctor"
+    );
+
+    // 💾 SAFE MERGE
+    record.encounter_data = {
+      ...updatedEncounterData,
+      doctorSession: session
+    };
+
+    // 🔄 STATE UPDATE (only if changed)
+    record.status = nextState;
+
+    // 🕒 TIMELINE
     record.timeline.push({
       event: `👨‍⚕️ Doctor stage: ${stage}`,
       timestamp: new Date().toISOString()
     });
 
-    const updated = await updateEncounterDB(id, record, record.status);
+    const updated = await updateEncounterDB(
+      id,
+      cleanBeforeSave(record),
+      record.status
+    );
 
     res.json({
       status: updated.status,
@@ -643,6 +703,7 @@ export const doctorWorkHandler = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
+
 /*
 ================================================
 🧠 BUILD SOAN VIEW (UNIFIED CLINICAL CARD)
