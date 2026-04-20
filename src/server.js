@@ -37,8 +37,9 @@ time: new Date(),
 // ========================================
 // 🔹 START SERVER (CODESPACES SAFE)
 // ========================================
+
 const PORT = 5050;
 
 app.listen(PORT, "0.0.0.0", () => {
-console.log("🚀 Server running on port ${PORT}");
+  console.log(`🚀 Server running on port ${PORT}`);
 });
