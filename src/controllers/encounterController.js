@@ -233,6 +233,7 @@ export const intakeHandler = async (req, res) => {
 VITALS
 ================================================
 */
+
 export const addVitalsHandler = async (req, res) => {
   try {
     const { id } = req.params;
@@ -241,23 +242,48 @@ export const addVitalsHandler = async (req, res) => {
 
     let record = await getEncounterDB(id);
 
+    if (!record) {
+      return res.status(404).json({ error: "Not found" });
+    }
+
     record.encounter_data = record.encounter_data || {};
 
-    record.encounter_data.vitals = {
-      heart_rate: Number(req.body.heartRate) || null,
-      temperature: Number(req.body.temperature) || null,
-      blood_pressure: req.body.bloodPressure || null,
-      spo2: Number(req.body.oxygenSaturation) || null
+    // 🔐 GOVERNANCE (intake → vitals_recorded)
+    assertValidTransition(record.status, "vitals_recorded");
+
+    // 🧾 HISTORY (AUDIT)
+    const updatedEncounterData = appendStateHistory(
+      record,
+      record.status,
+      "vitals_recorded",
+      "system"
+    );
+
+    // 🧠 BUSINESS LOGIC
+    record.encounter_data = {
+      ...updatedEncounterData,
+      vitals: {
+        heart_rate: Number(req.body.heartRate) || null,
+        temperature: Number(req.body.temperature) || null,
+        blood_pressure: req.body.bloodPressure || null,
+        spo2: Number(req.body.oxygenSaturation) || null
+      }
     };
 
+    // 🔄 STATE UPDATE
     record.status = "vitals_recorded";
 
+    // 🕒 TIMELINE
     record.timeline.push({
       event: "🩺 Vitals recorded",
       timestamp: new Date().toISOString()
     });
 
-    const updated = await updateEncounterDB(id, record, record.status);
+    const updated = await updateEncounterDB(
+      id,
+      cleanBeforeSave(record),
+      record.status
+    );
 
     res.json({
       status: updated.status,
@@ -268,7 +294,6 @@ export const addVitalsHandler = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
-
 /*
 ================================================
 SYMPTOMS + AI + DECISION
