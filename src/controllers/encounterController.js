@@ -158,6 +158,48 @@ export const createEncounterHandler = async (req, res) => {
   }
 };
 
+export const getEncounterHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // 🔍 JOIN patient (NEW SYSTEM)
+    const result = await query(
+      `
+      SELECT 
+        e.*,
+        p.name,
+        p.national_id
+      FROM encounters e
+      JOIN patients p ON e.patient_id = p.id
+      WHERE e.id = $1
+      `,
+      [id]
+    );
+
+    if (!result.rows[0]) {
+      return res.status(404).json({ error: "Encounter not found" });
+    }
+
+    const record = result.rows[0];
+
+    res.json({
+      status: record.status,
+      encounter: {
+        ...record,
+        patient: {
+          id: record.patient_id,
+          name: record.name,
+          national_id: record.national_id
+        }
+      }
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Fetch failed" });
+  }
+};
+
 /*
 ================================================
 TIMELINE
