@@ -5,8 +5,10 @@ import {
   getEncounterDB,
   updateEncounterDB
 } from "../services/dbService.js";
+import { assertValidTransition } from "../services/governance/stateContract.js";
+import { appendStateHistory } from "../services/governance/stateHistory.js";
 
-import { processCaseState } from "../services/clinicalStateMachine.js";
+
 import { evaluateEncounter } from "../services/clinicalDecision.service.js";
 import { callAIOrchestrator } from "../services/aiOrchestrator.client.js";
 
