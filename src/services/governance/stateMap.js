@@ -1,25 +1,19 @@
-// 🔐 Allowed transitions ONLY — no logic here
-
 export const STATE_FLOW = {
   created: ["intake"],
 
-  intake: ["vitals"],
+  intake: ["vitals_recorded"],
 
-  vitals: ["symptoms"],
+  vitals_recorded: ["symptoms_recorded"],
 
-  symptoms: ["validate"],
+  symptoms_recorded: ["validated"],
 
-  validate: ["nurse"],
+  validated: ["nurse_validated"],
 
-  nurse: ["handover_pending"],
+  nurse_validated: ["handover_pending", "completed"],
 
-  handover_pending: ["claim"],
+  handover_pending: ["doctor_active"],
 
-  claim: ["doctor"],
+  doctor_active: ["completed"],
 
-  doctor: ["doctor-work"],
-
-  "doctor-work": ["closed"],
-
-  closed: []
+  completed: []
 };
