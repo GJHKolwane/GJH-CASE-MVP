@@ -12,7 +12,6 @@ import {
   doctorWorkHandler,
   getEncounterHandler,
   getEncounterTimelineHandler,
-  getSOANViewHandler            // ✅ NEW
 } from "../controllers/encounterController.js";
 
 // ⚠️ TEMP — legacy (remove after frontend fully migrates)
@@ -39,13 +38,6 @@ router.get("/", async (req, res) => {
 
 router.get("/:id", getEncounterHandler);
 router.get("/:id/timeline", getEncounterTimelineHandler);
-
-/*
-================================================
-🧠 SOAN VIEW (UNIFIED CLINICAL DISPLAY 🔥)
-================================================
-*/
-router.get("/:id/soan", getSOANViewHandler);
 
 /*
 ================================================
