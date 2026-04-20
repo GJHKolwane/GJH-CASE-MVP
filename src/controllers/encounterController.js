@@ -502,3 +502,51 @@ export const doctorWorkHandler = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
+/*
+================================================
+🧠 BUILD SOAN VIEW (UNIFIED CLINICAL CARD)
+================================================
+*/
+const buildSOANView = (record) => {
+  const ed = record.encounter_data || {};
+
+  const ai = ed.ai || {};
+  const decision = ed.decision || {};
+  const nurse = ed.nurseSession?.data || {};
+  const doctor = ed.doctorSession?.data || {};
+
+  return {
+    patient: record.patient_data,
+
+    triage: {
+      severity: decision.triage?.severity || ed.finalSeverity || "UNKNOWN",
+      escalation: decision.triage?.escalation || false
+    },
+
+    SOAN: {
+      S: {
+        symptoms: ed.symptoms || [],
+        intakeNotes: ed.intake || {},
+        aiSummary: ai?.summary || ai?.analysis || null
+      },
+
+      O: {
+        vitals: ed.vitals || {},
+        aiFindings: ai?.clinicalFindings || null
+      },
+
+      A: {
+        aiAssessment: ai?.riskAssessment || null,
+        nurseValidation: nurse?.validation || nurse?.nurseDecision || null,
+        finalSeverity: ed.finalSeverity || null
+      },
+
+      N: {
+        doctorNotes: doctor?.soan || null,
+        treatment: doctor?.treatment || null,
+        followUp: doctor?.followUpRequired || null,
+        appointment: ed.appointment || null
+      }
+    }
+  };
+};
