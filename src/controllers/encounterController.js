@@ -306,41 +306,72 @@ export const addSymptomsHandler = async (req, res) => {
     trace("symptoms", id);
 
     let record = await getEncounterDB(id);
+
+    if (!record) {
+      return res.status(404).json({ error: "Not found" });
+    }
+
     record.encounter_data = record.encounter_data || {};
 
+    // 🔐 GOVERNANCE (vitals_recorded → symptoms_recorded)
+    assertValidTransition(record.status, "symptoms_recorded");
+
+    // 🧾 HISTORY (AUDIT)
+    const updatedEncounterData = appendStateHistory(
+      record,
+      record.status,
+      "symptoms_recorded",
+      "system"
+    );
+
+    // 🧠 NORMALIZE INPUT
     const symptoms =
       typeof req.body.symptoms === "string"
         ? req.body.symptoms.split(",").map(s => s.trim())
         : req.body.symptoms || [];
 
-    record.encounter_data.symptoms = symptoms;
-
-    // AI (assistive only)
+    // 🤖 AI (assistive only)
+    let ai = null;
     try {
-      const ai = await callAIOrchestrator({
+      ai = await callAIOrchestrator({
         inputText: symptoms.join(", "),
         vitals: record.encounter_data.vitals || {},
         symptoms
       });
-      record.encounter_data.ai = ai;
     } catch {
-      record.encounter_data.ai = null;
+      ai = null;
     }
 
-    // Decision (PRIMARY LOGIC)
-    const decision = await evaluateEncounter(record.encounter_data);
+    // 🧠 DECISION (PRIMARY AUTHORITY)
+    const decision = await evaluateEncounter({
+      ...record.encounter_data,
+      symptoms,
+      ai
+    });
 
-    record.encounter_data.decision = decision;
-    record.encounter_data.finalSeverity = decision.finalSeverity;
+    // 💾 SAFE MERGE (NO DATA LOSS)
+    record.encounter_data = {
+      ...updatedEncounterData,
+      symptoms,
+      ai,
+      decision,
+      finalSeverity: decision.finalSeverity
+    };
 
+    // 🔄 STATE UPDATE
     record.status = "symptoms_recorded";
 
+    // 🕒 TIMELINE
     record.timeline.push({
       event: "🧠 Symptoms processed + decision generated",
       timestamp: new Date().toISOString()
     });
 
-    const updated = await updateEncounterDB(id, record, record.status);
+    const updated = await updateEncounterDB(
+      id,
+      cleanBeforeSave(record),
+      record.status
+    );
 
     res.json({
       status: updated.status,
