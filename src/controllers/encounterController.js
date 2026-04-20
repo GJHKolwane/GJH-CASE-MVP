@@ -453,7 +453,7 @@ export const validateEncounterHandler = async (req, res) => {
 
 /*
 ================================================
-NURSE ENGINE
+NURSE ENGINE (GOVERNED + OWNERSHIP-AWARE)
 ================================================
 */
 
@@ -486,39 +486,84 @@ export const nurseAssessmentHandler = async (req, res) => {
 
     let nextState = null;
 
+    /*
+    ========================================
+    STAGE HANDLING
+    ========================================
+    */
     switch (stage) {
+      /*
+      ----------------------------------------
+      VALIDATION
+      ----------------------------------------
+      */
       case "validation":
         nextState = "nurse_validated";
 
-        // 🔐 GOVERNANCE
         assertValidTransition(record.status, nextState);
 
         session.data.validation = req.body;
+
+        // 🧠 OWNERSHIP → NURSE (actively responsible)
+        record.encounter_data.ownership = {
+          owner: "nurse",
+          doctorId: null,
+          claimedAt: null
+        };
+
         break;
 
+      /*
+      ----------------------------------------
+      COMPLETION (NO DOCTOR NEEDED)
+      ----------------------------------------
+      */
       case "completion":
         nextState = "completed";
 
-        // 🔐 GOVERNANCE
         assertValidTransition(record.status, nextState);
 
         session.status = "completed";
+
+        // 🧠 OWNERSHIP → NURSE (case closed under nurse)
+        record.encounter_data.ownership = {
+          owner: "nurse",
+          doctorId: null,
+          claimedAt: null
+        };
+
         break;
 
+      /*
+      ----------------------------------------
+      ESCALATION → DOCTOR
+      ----------------------------------------
+      */
       case "escalation":
         nextState = "handover_pending";
 
-        // 🔐 GOVERNANCE
         assertValidTransition(record.status, nextState);
 
         session.status = "handover";
+
+        // 🧠 OWNERSHIP → SYSTEM (IN TRANSIT)
+        record.encounter_data.ownership = {
+          owner: "system",
+          doctorId: null,
+          claimedAt: null
+        };
+
         break;
 
       default:
         throw new Error("Invalid stage");
     }
 
-    // 🧾 HISTORY (AUDIT)
+    /*
+    ========================================
+    🧾 HISTORY (AUDIT)
+    ========================================
+    */
     const updatedEncounterData = appendStateHistory(
       record,
       record.status,
@@ -526,21 +571,41 @@ export const nurseAssessmentHandler = async (req, res) => {
       "nurse"
     );
 
-    // 💾 SAFE MERGE
+    /*
+    ========================================
+    💾 SAFE MERGE (CRITICAL)
+    ========================================
+    */
     record.encounter_data = {
       ...updatedEncounterData,
-      nurseSession: session
+      nurseSession: session,
+      ownership: record.encounter_data.ownership
     };
 
-    // 🔄 STATE UPDATE
+    /*
+    ========================================
+    🔄 STATE UPDATE
+    ========================================
+    */
     record.status = nextState;
 
-    // 🕒 TIMELINE
+    /*
+    ========================================
+    🕒 TIMELINE
+    ========================================
+    */
+    record.timeline = record.timeline || [];
+
     record.timeline.push({
       event: `👩‍⚕️ Nurse stage: ${stage}`,
       timestamp: new Date().toISOString()
     });
 
+    /*
+    ========================================
+    💾 SAVE
+    ========================================
+    */
     const updated = await updateEncounterDB(
       id,
       cleanBeforeSave(record),
@@ -562,11 +627,17 @@ export const nurseAssessmentHandler = async (req, res) => {
 DOCTOR CONSULTATION (AUDIT)
 ================================================
 */
+
 export const doctorConsultationHandler = async (req, res) => {
   try {
     const { id } = req.params;
+    const { doctorId } = req.body;
 
-    trace("doctor_open", id);
+    trace("doctor_start", id);
+
+    if (!doctorId) {
+      throw new Error("Doctor ID is required to take ownership");
+    }
 
     let record = await getEncounterDB(id);
 
@@ -574,28 +645,48 @@ export const doctorConsultationHandler = async (req, res) => {
       return res.status(404).json({ error: "Not found" });
     }
 
-    if (record.status !== "doctor_active") {
-      throw new Error("Doctor must claim first");
-    }
+    // 🔥 TRANSITION: handover_pending → doctor_active
+    const nextState = "doctor_active";
+
+    assertValidTransition(record.status, nextState);
 
     record.encounter_data = record.encounter_data || {};
 
-    // 🧾 HISTORY (AUDIT ONLY — NO STATE CHANGE)
+    // 🧠 OWNERSHIP ASSIGNMENT (LEGAL CONTROL)
+    record.encounter_data.ownership = {
+      owner: "doctor",
+      doctorId,
+      claimedAt: new Date().toISOString()
+    };
+
+    // 🧾 INIT DOCTOR SESSION (if not exists)
+    record.encounter_data.doctorSession =
+      record.encounter_data.doctorSession || {
+        status: "active",
+        data: {}
+      };
+
+    // 🧾 HISTORY (AUDIT)
     const updatedEncounterData = appendStateHistory(
       record,
       record.status,
-      record.status, // no transition
-      "doctor_open"
+      nextState,
+      "doctor"
     );
 
     // 💾 SAFE MERGE
     record.encounter_data = {
-      ...updatedEncounterData
+      ...updatedEncounterData,
+      ownership: record.encounter_data.ownership,
+      doctorSession: record.encounter_data.doctorSession
     };
+
+    // 🔄 STATE UPDATE
+    record.status = nextState;
 
     // 🕒 TIMELINE
     record.timeline.push({
-      event: "👨‍⚕️ Doctor opened case",
+      event: `👨‍⚕️ Doctor ${doctorId} claimed case`,
       timestamp: new Date().toISOString()
     });
 
