@@ -21,7 +21,7 @@ app.use(express.json());
 // ========================================
 // 🔹 ROUTES
 // ========================================
-app.use("/encounter", encounterRoutes);
+app.use("/api/encounter", encounterRoutes);
 app.use("/api", queryRoutes);
 // ========================================
 // 🔹 HEALTH CHECK
