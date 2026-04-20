@@ -709,6 +709,7 @@ export const doctorWorkHandler = async (req, res) => {
 🧠 BUILD SOAN VIEW (UNIFIED CLINICAL CARD)
 ================================================
 */
+
 const buildSOANView = (record) => {
   const ed = record.encounter_data || {};
 
@@ -729,26 +730,32 @@ const buildSOANView = (record) => {
       S: {
         symptoms: ed.symptoms || [],
         intakeNotes: ed.intake || {},
-        aiSummary: ai?.summary || ai?.analysis || null
+        aiSummary: ai.summary || null   // 🔒 standardize
       },
 
       O: {
         vitals: ed.vitals || {},
-        aiFindings: ai?.clinicalFindings || null
+        aiFindings: ai.clinicalFindings || null
       },
 
       A: {
-        aiAssessment: ai?.riskAssessment || null,
-        nurseValidation: nurse?.validation || nurse?.nurseDecision || null,
+        aiAssessment: ai.riskAssessment || null,
+        nurseValidation: nurse.validation || null, // 🔒 single contract
         finalSeverity: ed.finalSeverity || null
       },
 
       N: {
-        doctorNotes: doctor?.soan || null,
-        treatment: doctor?.treatment || null,
-        followUp: doctor?.followUpRequired || null,
+        doctorNotes: doctor.soan || null,
+        treatment: doctor.treatment || null,
+        followUp: doctor.followUpRequired || null,
         appointment: ed.appointment || null
       }
+    },
+
+    // 🧾 OPTIONAL BUT POWERFUL (AUDIT SNAPSHOT)
+    meta: {
+      status: record.status,
+      lastUpdated: record.updated_at || null
     }
   };
 };
