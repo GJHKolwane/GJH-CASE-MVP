@@ -10,7 +10,6 @@ import {
   validateEncounterHandler,
   doctorConsultationHandler,
   doctorWorkHandler,
-  doctorClaimHandler,
   getEncounterHandler,
   getEncounterTimelineHandler,
   getSOANViewHandler            // ✅ NEW
@@ -77,8 +76,6 @@ DOCTOR FLOW (HANDOVER + STAGE ENGINE)
 ================================================
 */
 
-// 🔥 STEP 1: CLAIM (MANDATORY BEFORE ANY DOCTOR ACTION)
-router.post("/:id/claim", doctorClaimHandler);
 
 // 🔥 STEP 2: OPEN CASE (OPTIONAL — audit/logging)
 router.post("/:id/doctor", doctorConsultationHandler);
