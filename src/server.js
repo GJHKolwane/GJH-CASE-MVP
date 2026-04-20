@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import queryRoutes from "./src/routes/queryRoutes.js";
 
 import encounterRoutes from "./routes/encounterRoutes.js";
 
@@ -21,7 +22,7 @@ app.use(express.json());
 // 🔹 ROUTES
 // ========================================
 app.use("/encounters", encounterRoutes);
-
+app.use("/api", queryRoutes);
 // ========================================
 // 🔹 HEALTH CHECK
 // ========================================
