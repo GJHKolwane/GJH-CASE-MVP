@@ -70,19 +70,42 @@ const ensureDecision = async (record) => {
 CREATE
 ================================================
 */
+
 export const createEncounterHandler = async (req, res) => {
   try {
     const body = req.body || {};
+
+    const now = new Date().toISOString();
 
     const normalized = {
       patient_data: {
         name: body.patient_data?.name || body.name || "Unknown Patient"
       },
       national_id: body.national_id || null,
+
+      // ✅ STATE (SOURCE OF TRUTH)
       status: "created",
       current_state: "created",
-      encounter_data: {},
-      timeline: []
+
+      // ✅ EMR RECORD
+      encounter_data: {
+        history: [
+          {
+            from: null,
+            to: "created",
+            actor: "system",
+            timestamp: now
+          }
+        ]
+      },
+
+      // ✅ HUMAN-READABLE TIMELINE
+      timeline: [
+        {
+          event: "🆕 Encounter created",
+          timestamp: now
+        }
+      ]
     };
 
     const encounter = await createEncounterDB(normalized);
