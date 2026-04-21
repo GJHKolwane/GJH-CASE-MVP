@@ -241,6 +241,37 @@ export const intakeHandler = async (req, res) => {
 
 /*
 ================================================
+TIMELINE (SAFE + ALIGNED)
+================================================
+*/
+export const getEncounterTimelineHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    let record = await getEncounterDB(id);
+
+    if (!record) {
+      return res.status(404).json({ error: "Not found" });
+    }
+
+    // 🔥 Ensure structure (prevents undefined timeline)
+    record = ensureEncounterStructure(record);
+
+    res.json({
+      timeline: record.timeline || []
+    });
+
+  } catch (err) {
+    console.error("🔥 TIMELINE ERROR:", err);
+
+    res.status(500).json({
+      error: err.message
+    });
+  }
+};
+
+/*
+================================================
 VITALS
 ================================================
 */
