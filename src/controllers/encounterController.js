@@ -85,55 +85,34 @@ export const createEncounterHandler = async (req, res) => {
     // ========================================
     const patientId = uuidv4();
 
+    const name =
+      body.name || body.patient_data?.name || "Unknown Patient";
+
+    const nationalId =
+      body.national_id || body.patient_data?.national_id || null;
+
     await query(
       `INSERT INTO patients (id, name, national_id)
        VALUES ($1, $2, $3)`,
-      [
-        patientId,
-        body.patient_data?.name || body.name || "Unknown Patient",
-        body.national_id || null
-      ]
+      [patientId, name, nationalId]
     );
 
     // ========================================
-    // 🧠 STEP 2: NORMALIZE ENCOUNTER
+    // 🧠 STEP 2: NORMALIZE (MINIMAL — NO DUPLICATION)
     // ========================================
     const normalized = {
-      patient_id: patientId, // 🔥 CRITICAL
+      patient_id: patientId,
+
+      // 🔥 PASS THROUGH CORE DATA
+      name,
+      national_id: nationalId,
+
+      // 🔥 CARE MODE ORIGIN
+      care_mode: body.care_mode || "facility",
 
       status: "created",
-      current_state: "created",
 
-      encounter_data: {
-        intake: null,
-        vitals: null,
-        symptoms: null,
-
-        ai: {},
-        decision: {},
-        validation: {},
-
-        nurseSession: {},
-        doctorSession: {},
-
-        appointment: null,
-
-        ownership: {
-          owner: "system",
-          doctorId: null,
-          claimedAt: null
-        },
-
-        history: [
-          {
-            from: null,
-            to: "created",
-            actor: "system",
-            timestamp: now
-          }
-        ]
-      },
-
+      // optional metadata
       timeline: [
         {
           event: "🆕 Encounter created",
@@ -143,7 +122,7 @@ export const createEncounterHandler = async (req, res) => {
     };
 
     // ========================================
-    // 💾 STEP 3: CREATE ENCOUNTER
+    // 💾 STEP 3: CREATE ENCOUNTER (DB LAYER BUILDS STRUCTURE)
     // ========================================
     const encounter = await createEncounterDB(normalized);
 
@@ -155,50 +134,12 @@ export const createEncounterHandler = async (req, res) => {
     });
 
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Create failed" });
-  }
-};
+    console.error("🔥 CREATE HANDLER ERROR:", err);
 
-export const getEncounterHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    // 🔍 JOIN patient (NEW SYSTEM)
-    const result = await query(
-      `
-      SELECT 
-        e.*,
-        p.name,
-        p.national_id
-      FROM encounters e
-      JOIN patients p ON e.patient_id = p.id
-      WHERE e.id = $1
-      `,
-      [id]
-    );
-
-    if (!result.rows[0]) {
-      return res.status(404).json({ error: "Encounter not found" });
-    }
-
-    const record = result.rows[0];
-
-    res.json({
-      status: record.status,
-      encounter: {
-        ...record,
-        patient: {
-          id: record.patient_id,
-          name: record.name,
-          national_id: record.national_id
-        }
-      }
+    res.status(500).json({
+      error: err.message,
+      detail: err.detail
     });
-
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Fetch failed" });
   }
 };
 
