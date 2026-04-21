@@ -1,20 +1,45 @@
 // src/controllers/encounterController.js
+
 import { v4 as uuidv4 } from "uuid";
 import { query } from "../config/db.js";
 import { resolveVisibility } from "../services/care/careMode.service.js";
-
 
 import {
   createEncounterDB,
   getEncounterDB,
   updateEncounterDB
 } from "../services/dbService.js";
+
 import { assertValidTransition } from "../services/governance/stateContract.js";
 import { appendStateHistory } from "../services/governance/stateHistory.js";
 
-
 import { evaluateEncounter } from "../services/clinicalDecision.service.js";
 import { callAIOrchestrator } from "../services/aiOrchestrator.client.js";
+
+/*
+================================================
+🔥 GLOBAL STRUCTURE GUARD (CORE FIX)
+================================================
+*/
+const ensureEncounterStructure = (record = {}) => {
+  record.encounter_data = record.encounter_data || {};
+
+  const ed = record.encounter_data;
+
+  return {
+    ...record,
+    encounter_data: {
+      ...ed,
+      history: Array.isArray(ed.history) ? ed.history : [],
+      ai: ed.ai || {},
+      decision: ed.decision || {},
+      validation: ed.validation || {},
+      nurseSession: ed.nurseSession || {},
+      doctorSession: ed.doctorSession || {}
+    },
+    timeline: Array.isArray(record.timeline) ? record.timeline : []
+  };
+};
 
 /*
 ================================================
@@ -44,7 +69,7 @@ const cleanBeforeSave = (data) => {
 
 /*
 ================================================
-DECISION GUARD (AI ≠ AUTHORITY)
+DECISION GUARD
 ================================================
 */
 const ensureDecision = async (record) => {
@@ -57,13 +82,10 @@ const ensureDecision = async (record) => {
     ed.finalSeverity = decision.finalSeverity;
     ed.rules = decision.rules;
 
-    record.timeline = [
-      ...(record.timeline || []),
-      {
-        event: "🛡️ Decision engine fallback",
-        timestamp: new Date().toISOString()
-      }
-    ];
+    record.timeline.push({
+      event: "🛡️ Decision engine fallback",
+      timestamp: new Date().toISOString()
+    });
   }
 
   return record;
@@ -74,13 +96,11 @@ const ensureDecision = async (record) => {
 CREATE
 ================================================
 */
-
 export const createEncounterHandler = async (req, res) => {
   try {
     const body = req.body || {};
     const now = new Date().toISOString();
 
-    // 🧠 CREATE PATIENT
     const patientId = uuidv4();
 
     const name =
@@ -89,14 +109,12 @@ export const createEncounterHandler = async (req, res) => {
     const nationalId =
       body.national_id || body.patient_data?.national_id || null;
 
-    console.log("🧠 CREATE BODY:", body);
     await query(
       `INSERT INTO patients (id, name, national_id)
        VALUES ($1, $2, $3)`,
       [patientId, name, nationalId]
     );
 
-    // 🧠 NORMALIZE
     const normalized = {
       patient_id: patientId,
       name,
@@ -111,7 +129,6 @@ export const createEncounterHandler = async (req, res) => {
       ]
     };
 
-    // 💾 CREATE ENCOUNTER
     const encounter = await createEncounterDB(normalized);
 
     trace("create", encounter.id);
@@ -121,18 +138,15 @@ export const createEncounterHandler = async (req, res) => {
       encounter: sanitizeResponse(encounter)
     });
 
-  }
-  catch (err) {
-  console.error("🔥 FULL CREATE ERROR:", err);
-  console.error("🔥 STACK:", err.stack);
-
-  res.status(500).json({ error: err.message });
+  } catch (err) {
+    console.error("🔥 CREATE ERROR:", err);
+    res.status(500).json({ error: err.message });
   }
 };
 
 /*
 ================================================
-GET SINGLE ENCOUNTER
+GET
 ================================================
 */
 export const getEncounterHandler = async (req, res) => {
@@ -141,10 +155,7 @@ export const getEncounterHandler = async (req, res) => {
 
     const result = await query(
       `
-      SELECT 
-        e.*,
-        p.name,
-        p.national_id
+      SELECT e.*, p.name, p.national_id
       FROM encounters e
       JOIN patients p ON e.patient_id = p.id
       WHERE e.id = $1
@@ -153,10 +164,10 @@ export const getEncounterHandler = async (req, res) => {
     );
 
     if (!result.rows[0]) {
-      return res.status(404).json({ error: "Encounter not found" });
+      return res.status(404).json({ error: "Not found" });
     }
 
-    const record = result.rows[0];
+    const record = ensureEncounterStructure(result.rows[0]);
 
     res.json({
       status: record.status,
@@ -171,37 +182,13 @@ export const getEncounterHandler = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("🔥 GET HANDLER ERROR:", err);
-
-    res.status(500).json({
-      error: err.message
-    });
-  }
-};
-
-/*
-================================================
-TIMELINE
-================================================
-*/
-export const getEncounterTimelineHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const record = await getEncounterDB(id);
-
-    res.json({
-      timeline: record.timeline || []
-    });
-
-  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
 /*
 ================================================
-INTAKE
+INTAKE (🔥 FIXED)
 ================================================
 */
 export const intakeHandler = async (req, res) => {
@@ -211,17 +198,12 @@ export const intakeHandler = async (req, res) => {
     trace("intake", id);
 
     let record = await getEncounterDB(id);
+    if (!record) return res.status(404).json({ error: "Not found" });
 
-    if (!record) {
-      return res.status(404).json({ error: "Not found" });
-    }
+    record = ensureEncounterStructure(record);
 
-    record.encounter_data = record.encounter_data || {};
-
-    // 🔐 GOVERNANCE (created → intake)
     assertValidTransition(record.status, "intake");
 
-    // 🧾 HISTORY (AUDIT)
     const updatedEncounterData = appendStateHistory(
       record,
       record.status,
@@ -229,16 +211,13 @@ export const intakeHandler = async (req, res) => {
       "system"
     );
 
-    // 🧠 BUSINESS LOGIC (simple + explicit)
     record.encounter_data = {
       ...updatedEncounterData,
       intake: req.body.intake || {}
     };
 
-    // 🔄 STATE UPDATE
     record.status = "intake";
 
-    // 🕒 TIMELINE (human-readable)
     record.timeline.push({
       event: "📝 Intake captured",
       timestamp: new Date().toISOString()
