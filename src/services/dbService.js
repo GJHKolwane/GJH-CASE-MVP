@@ -32,7 +32,6 @@ function sanitizeEncounterData(data) {
     delete clean.encounter_data.routing;
     delete clean.encounter_data.escalation;
 
-    // 🔒 Protect history structure
     if (!Array.isArray(clean.encounter_data.history)) {
       clean.encounter_data.history = [];
     }
@@ -43,7 +42,7 @@ function sanitizeEncounterData(data) {
 
 /*
 ================================================
-CREATE (ALIGNED WITH GOVERNANCE MODEL)
+CREATE (FULLY ALIGNED)
 ================================================
 */
 export async function createEncounterDB(payload) {
@@ -55,12 +54,27 @@ export async function createEncounterDB(payload) {
         ? payload.patient_id
         : uuidv4();
 
+    // ✅ CONTRACT ALIGNMENT
+    const name =
+      payload.name ||
+      payload.patient_data?.name ||
+      "Unknown Patient";
+
+    const nationalId =
+      payload.national_id ||
+      payload.patient_data?.national_id ||
+      null;
+
     const initialData = {
       patient: {
         id: patientId,
-        name: payload.patient_data?.name || "Unknown Patient",
-        national_id: payload.national_id || null
+        name,
+        national_id: nationalId
       },
+
+      // 🔥 CORE CONTEXT
+      care_mode: payload.care_mode || "facility",
+      visibility: ["doctor"],
 
       intake: null,
       vitals: null,
@@ -85,14 +99,23 @@ export async function createEncounterDB(payload) {
       ]
     };
 
-    const cleanData = sanitizeEncounterData({ encounter_data: initialData });
+    const cleanData = sanitizeEncounterData({
+      encounter_data: initialData
+    });
 
     const res = await query(
       `INSERT INTO encounters 
-       (id, encounter_data, status)
-       VALUES ($1::uuid, $2::jsonb, $3)
+       (id, encounter_data, status, patient_id, owner_type, owner_id)
+       VALUES ($1::uuid, $2::jsonb, $3, $4::uuid, $5, $6)
        RETURNING *`,
-      [id, cleanData.encounter_data, payload.status || "created"]
+      [
+        id,
+        cleanData.encounter_data,
+        payload.status || "created",
+        patientId,
+        "system",
+        null
+      ]
     );
 
     return sanitizeEncounterData(res.rows[0]);
@@ -133,7 +156,7 @@ export async function getEncounterDB(id) {
 
 /*
 ================================================
-UPDATE (SAFE MERGE + HISTORY ENFORCEMENT)
+UPDATE (SAFE MERGE)
 ================================================
 */
 export async function updateEncounterDB(id, data, status) {
@@ -147,13 +170,12 @@ export async function updateEncounterDB(id, data, status) {
     const existingData = ensureObject(existing.encounter_data);
     const incomingData = ensureObject(data);
 
-    // 🔥 SAFE MERGE (NO OVERWRITE)
     const merged = {
       ...existingData,
       ...incomingData
     };
 
-    // 🔒 HISTORY ENFORCEMENT (APPEND ONLY)
+    // 🔒 HISTORY (append only)
     merged.history = [
       ...(existingData.history || []),
       ...(incomingData.history || [])
@@ -178,19 +200,11 @@ export async function updateEncounterDB(id, data, status) {
     );
 
     if (res.rowCount === 0) {
-      console.warn("⚠️ UPDATE FAILED: No matching encounter for ID:", id);
+      console.warn("⚠️ UPDATE FAILED:", id);
       return null;
     }
 
-    const dbRecord = sanitizeEncounterData(res.rows[0]);
-
-    // 🔥 RESPONSE LAYER (NOT STORED IN DB)
-    return {
-      ...dbRecord,
-      routing: incomingData.routing || null,
-      escalation: incomingData.escalation || null,
-      doctor: incomingData.doctor || null
-    };
+    return sanitizeEncounterData(res.rows[0]);
 
   } catch (err) {
     console.error("❌ DB UPDATE ERROR:", err);
@@ -200,7 +214,7 @@ export async function updateEncounterDB(id, data, status) {
 
 /*
 ================================================
-PATCH FIELD (LIGHTWEIGHT UPDATE)
+PATCH FIELD
 ================================================
 */
 export async function patchEncounterField(id, field, value) {
@@ -278,4 +292,4 @@ export async function checkDBConnection() {
     console.error("❌ DB CONNECTION ERROR:", err);
     throw err;
   }
-      }
+}
