@@ -80,9 +80,7 @@ export const createEncounterHandler = async (req, res) => {
     const body = req.body || {};
     const now = new Date().toISOString();
 
-    // ========================================
-    // 🧠 STEP 1: CREATE PATIENT (SOURCE OF TRUTH)
-    // ========================================
+    // 🧠 CREATE PATIENT
     const patientId = uuidv4();
 
     const name =
@@ -97,22 +95,13 @@ export const createEncounterHandler = async (req, res) => {
       [patientId, name, nationalId]
     );
 
-    // ========================================
-    // 🧠 STEP 2: NORMALIZE (MINIMAL — NO DUPLICATION)
-    // ========================================
+    // 🧠 NORMALIZE
     const normalized = {
       patient_id: patientId,
-
-      // 🔥 PASS THROUGH CORE DATA
       name,
       national_id: nationalId,
-
-      // 🔥 CARE MODE ORIGIN
       care_mode: body.care_mode || "facility",
-
       status: "created",
-
-      // optional metadata
       timeline: [
         {
           event: "🆕 Encounter created",
@@ -121,9 +110,7 @@ export const createEncounterHandler = async (req, res) => {
       ]
     };
 
-    // ========================================
-    // 💾 STEP 3: CREATE ENCOUNTER (DB LAYER BUILDS STRUCTURE)
-    // ========================================
+    // 💾 CREATE ENCOUNTER
     const encounter = await createEncounterDB(normalized);
 
     trace("create", encounter.id);
@@ -139,6 +126,55 @@ export const createEncounterHandler = async (req, res) => {
     res.status(500).json({
       error: err.message,
       detail: err.detail
+    });
+  }
+};
+
+/*
+================================================
+GET SINGLE ENCOUNTER
+================================================
+*/
+export const getEncounterHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await query(
+      `
+      SELECT 
+        e.*,
+        p.name,
+        p.national_id
+      FROM encounters e
+      JOIN patients p ON e.patient_id = p.id
+      WHERE e.id = $1
+      `,
+      [id]
+    );
+
+    if (!result.rows[0]) {
+      return res.status(404).json({ error: "Encounter not found" });
+    }
+
+    const record = result.rows[0];
+
+    res.json({
+      status: record.status,
+      encounter: {
+        ...record,
+        patient: {
+          id: record.patient_id,
+          name: record.name,
+          national_id: record.national_id
+        }
+      }
+    });
+
+  } catch (err) {
+    console.error("🔥 GET HANDLER ERROR:", err);
+
+    res.status(500).json({
+      error: err.message
     });
   }
 };
