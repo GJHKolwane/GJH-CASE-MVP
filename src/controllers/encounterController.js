@@ -1,6 +1,8 @@
 // src/controllers/encounterController.js
 import { v4 as uuidv4 } from "uuid";
 import { query } from "../config/db.js";
+import { resolveVisibility } from "../services/care/careMode.service.js";
+
 
 import {
   createEncounterDB,
@@ -545,6 +547,7 @@ export const nurseAssessmentHandler = async (req, res) => {
     ========================================
     */
     switch (stage) {
+
       /*
       ----------------------------------------
       VALIDATION
@@ -557,7 +560,7 @@ export const nurseAssessmentHandler = async (req, res) => {
 
         session.data.validation = req.body;
 
-        // 🧠 OWNERSHIP → NURSE (actively responsible)
+        // 🧠 OWNERSHIP → NURSE
         record.encounter_data.ownership = {
           owner: "nurse",
           doctorId: null,
@@ -568,7 +571,7 @@ export const nurseAssessmentHandler = async (req, res) => {
 
       /*
       ----------------------------------------
-      COMPLETION (NO DOCTOR NEEDED)
+      COMPLETION (NO DOCTOR)
       ----------------------------------------
       */
       case "completion":
@@ -578,7 +581,7 @@ export const nurseAssessmentHandler = async (req, res) => {
 
         session.status = "completed";
 
-        // 🧠 OWNERSHIP → NURSE (case closed under nurse)
+        // 🧠 OWNERSHIP → NURSE
         record.encounter_data.ownership = {
           owner: "nurse",
           doctorId: null,
@@ -598,6 +601,16 @@ export const nurseAssessmentHandler = async (req, res) => {
         assertValidTransition(record.status, nextState);
 
         session.status = "handover";
+
+        // 🧠 CARE MODE (SOURCE OF TRUTH)
+        const careMode =
+          record.encounter_data?.care_mode || "facility";
+
+        // 🧠 RESOLVE VISIBILITY BASED ON CARE MODE
+        const visibility = resolveVisibility(careMode);
+
+        // 🧠 APPLY VISIBILITY
+        record.encounter_data.visibility = visibility;
 
         // 🧠 OWNERSHIP → SYSTEM (IN TRANSIT)
         record.encounter_data.ownership = {
@@ -632,7 +645,9 @@ export const nurseAssessmentHandler = async (req, res) => {
     record.encounter_data = {
       ...updatedEncounterData,
       nurseSession: session,
-      ownership: record.encounter_data.ownership
+      ownership: record.encounter_data.ownership,
+      visibility: record.encounter_data.visibility, // 🔥 PRESERVED
+      care_mode: record.encounter_data.care_mode || "facility" // 🔥 ENSURE PERSISTENCE
     };
 
     /*
