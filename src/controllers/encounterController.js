@@ -89,6 +89,7 @@ export const createEncounterHandler = async (req, res) => {
     const nationalId =
       body.national_id || body.patient_data?.national_id || null;
 
+    console.log("🧠 CREATE BODY:", body);
     await query(
       `INSERT INTO patients (id, name, national_id)
        VALUES ($1, $2, $3)`,
@@ -120,13 +121,12 @@ export const createEncounterHandler = async (req, res) => {
       encounter: sanitizeResponse(encounter)
     });
 
-  } catch (err) {
-    console.error("🔥 CREATE HANDLER ERROR:", err);
+  }
+  catch (err) {
+  console.error("🔥 FULL CREATE ERROR:", err);
+  console.error("🔥 STACK:", err.stack);
 
-    res.status(500).json({
-      error: err.message,
-      detail: err.detail
-    });
+  res.status(500).json({ error: err.message });
   }
 };
 
