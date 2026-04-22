@@ -7,7 +7,6 @@ import {
   addVitalsHandler,
   addSymptomsHandler,
   nurseAssessmentHandler,
-  validateEncounterHandler,
   doctorConsultationHandler,
   doctorWorkHandler,
   getEncounterHandler,
@@ -60,7 +59,6 @@ router.post("/:id/nurse", nurseAssessmentHandler);
 */
 router.post("/:id/nurse-decision", nurseDecisionHandler);
 
-router.post("/:id/validate", validateEncounterHandler);
 
 /*
 ================================================
