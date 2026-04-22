@@ -288,10 +288,14 @@ export const addVitalsHandler = async (req, res) => {
       return res.status(404).json({ error: "Not found" });
     }
 
+    // 🔥 NEW: STRUCTURE GUARD (SAFE INSERT)
+    record = ensureEncounterStructure(record);
+
+    // (kept as requested — no deletion)
     record.encounter_data = record.encounter_data || {};
 
-    // 🔐 GOVERNANCE (intake → vitals_recorded)
-    assertValidTransition(record.status, "vitals_recorded");
+    // 🔐 GOVERNANCE (UPGRADED: FULL RECORD)
+    assertValidTransition(record, "vitals_recorded");
 
     // 🧾 HISTORY (AUDIT)
     const updatedEncounterData = appendStateHistory(
@@ -336,6 +340,7 @@ export const addVitalsHandler = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
+
 /*
 ================================================
 SYMPTOMS + AI + DECISION
