@@ -307,15 +307,17 @@ export const addVitalsHandler = async (req, res) => {
     );
 
     // 🧠 BUSINESS LOGIC
+
     record.encounter_data = {
-      ...updatedEncounterData,
-      vitals: {
-        heart_rate: Number(req.body.heartRate) || null,
-        temperature: Number(req.body.temperature) || null,
-        blood_pressure: req.body.bloodPressure || null,
-        spo2: Number(req.body.oxygenSaturation) || null
-      }
-    };
+  ...record.encounter_data,   // 🔥 KEEP INTAKE
+  ...updatedEncounterData,
+  vitals: {
+    heart_rate: Number(req.body.heartRate) || null,
+    temperature: Number(req.body.temperature) || null,
+    blood_pressure: req.body.bloodPressure || null,
+    spo2: Number(req.body.oxygenSaturation) || null
+  }
+};
 
     // 🔄 STATE UPDATE
     record.status = "vitals_recorded";
