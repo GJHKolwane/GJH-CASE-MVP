@@ -3,7 +3,7 @@
 export function evaluateClinicalState(data = {}) {
 
   // ========================================
-  // 🔹 INTAKE NORMALIZATION (NEW)
+  // 🔹 INTAKE NORMALIZATION
   // ========================================
 
   const intake = data.intake || {};
@@ -50,7 +50,7 @@ export function evaluateClinicalState(data = {}) {
     null;
 
   // ========================================
-  // 🔹 SYMPTOMS
+  // 🔹 SYMPTOMS NORMALIZATION
   // ========================================
 
   const symptoms = Array.isArray(data.symptoms)
@@ -58,13 +58,47 @@ export function evaluateClinicalState(data = {}) {
     : [];
 
   const normalizedSymptoms = symptoms.map(s =>
-    String(s).toLowerCase()
+    String(s).toLowerCase().trim()
   );
 
   const hasAny = (keywords) =>
     normalizedSymptoms.some(s =>
       keywords.some(k => s.includes(k))
     );
+
+  // ========================================
+  // 🚨 LIFE-CRITICAL OVERRIDE (TOP PRIORITY)
+  // ========================================
+
+  if (
+    hasAny([
+      "stab",
+      "stab wound",
+      "gunshot",
+      "gsw",
+      "not breathing",
+      "unconscious",
+      "not responding"
+    ])
+  ) {
+    return {
+      severity: "critical",
+      autoDecision: {
+        type: "doctor_escalation",
+        reason: ["life_critical_event"],
+        priority: "critical"
+      },
+      triggers: ["life_critical_override"],
+      riskFlags: [],
+      missingData: [],
+      extractedVitals: {
+        heartRate,
+        temperature,
+        bloodPressure,
+        oxygenSaturation
+      }
+    };
+  }
 
   // ========================================
   // 🧠 BASE STATE
@@ -75,7 +109,7 @@ export function evaluateClinicalState(data = {}) {
   let triggers = [];
 
   // ========================================
-  // 🚨 CORE RULES (UNCHANGED)
+  // 🚨 CORE RULES (UPGRADED)
   // ========================================
 
   if (
@@ -112,7 +146,42 @@ export function evaluateClinicalState(data = {}) {
     triggers.push("respiratory_distress");
   }
 
-  if (temperature >= 39) {
+  // 🔥 TRAUMA — NOW CRITICAL
+  if (
+    hasAny([
+      "bleeding",
+      "severe bleeding",
+      "injury",
+      "trauma",
+      "stab",
+      "knife",
+      "penetrating",
+      "gunshot",
+      "deep wound"
+    ])
+  ) {
+    severity = "critical";
+    triggers.push("penetrating_trauma");
+  }
+
+  // ========================================
+  // 🔬 VITALS — CRITICAL THRESHOLDS
+  // ========================================
+
+  if (heartRate && heartRate > 130) {
+    severity = "critical";
+    triggers.push("tachycardia_critical");
+  }
+
+  if (oxygenSaturation && oxygenSaturation < 90) {
+    severity = "critical";
+    triggers.push("hypoxia");
+  }
+
+  if (temperature >= 40) {
+    severity = "critical";
+    triggers.push("hyperpyrexia");
+  } else if (temperature >= 39) {
     if (severity !== "critical") severity = "high";
     triggers.push("possible_sepsis");
   }
@@ -128,25 +197,12 @@ export function evaluateClinicalState(data = {}) {
     }
   }
 
-  if (
-    hasAny([
-      "bleeding",
-      "severe bleeding",
-      "injury",
-      "trauma"
-    ])
-  ) {
-    if (severity !== "critical") severity = "high";
-    triggers.push("trauma_bleeding");
-  }
-
   // ========================================
-  // ⚠️ RISK MODIFIERS (NEW — CRITICAL LAYER)
+  // ⚠️ RISK MODIFIERS (UPGRADED)
   // ========================================
 
   const riskFlags = [];
 
-  // 👶 AGE RISK
   if (age !== null) {
     if (age < 5 || age > 65) {
       riskFlags.push("age_risk");
@@ -156,14 +212,15 @@ export function evaluateClinicalState(data = {}) {
     }
   }
 
-  // 🤰 PREGNANCY
+  // 🔥 PREGNANCY — TRUE MULTIPLIER
   if (pregnant) {
     riskFlags.push("pregnancy");
 
-    if (severity === "medium") severity = "high";
+    if (severity === "low") severity = "medium";
+    else if (severity === "medium") severity = "high";
+    else if (severity === "high") severity = "critical";
   }
 
-  // 🧬 IMMUNOCOMPROMISED
   if (immunocompromised) {
     riskFlags.push("immunocompromised");
 
@@ -171,7 +228,6 @@ export function evaluateClinicalState(data = {}) {
     else if (severity === "high") severity = "critical";
   }
 
-  // 🫀 CHRONIC CONDITIONS
   if (chronicConditions.length > 0) {
     riskFlags.push("chronic_conditions");
   }
