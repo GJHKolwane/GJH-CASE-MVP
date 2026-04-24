@@ -404,13 +404,15 @@ export const addSymptomsHandler = async (req, res) => {
     });
 
     // 💾 SAFE MERGE (NO DATA LOSS — YOUR ORIGINAL LOGIC KEPT)
-    record.encounter_data = {
-      ...updatedEncounterData,
-      symptoms,
-      ai,
-      decision,
-      finalSeverity: decision.finalSeverity
-    };
+    
+     record.encounter_data = {
+  ...record.encounter_data,   // 🔥 KEEP EVERYTHING
+  ...updatedEncounterData,
+  symptoms,
+  ai,
+  decision,
+  finalSeverity: decision.finalSeverity
+};
 
     // 🔄 STATE UPDATE
     record.status = "symptoms_recorded";
