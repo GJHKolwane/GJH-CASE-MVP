@@ -13,7 +13,7 @@ export async function evaluateEncounter(encounterData = {}) {
   } = encounterData;
 
   // ========================================
-  // 🔹 NORMALIZATION (STRICT)
+  // 🔹 NORMALIZATION
   // ========================================
 
   const normalizedVitals = vitals?.vitals || vitals || {};
@@ -31,7 +31,7 @@ export async function evaluateEncounter(encounterData = {}) {
   });
 
   // ========================================
-  // 🧠 AI ENGINE (CONTEXT-AWARE)
+  // 🧠 AI ENGINE
   // ========================================
 
   const ai = await runClinicalAI({
@@ -42,13 +42,27 @@ export async function evaluateEncounter(encounterData = {}) {
   });
 
   // ========================================
-  // 🔥 FUSION LOGIC (SAFE + TRACEABLE)
+  // 🔹 AI NORMALIZATION (FIXED)
   // ========================================
 
-  const normalize = (level) => level?.toUpperCase();
+  const normalizeRule = (level) => level?.toUpperCase();
 
-  const ruleSeverity = normalize(rules?.severity);
-  const aiSeverity = normalize(ai?.riskLevel);
+  const normalizeAI = (level) => {
+    if (!level) return null;
+    const l = level.toLowerCase();
+
+    if (l.includes("critical")) return "CRITICAL";
+    if (l.includes("high")) return "HIGH";
+    if (l.includes("medium")) return "MEDIUM";
+    return "LOW";
+  };
+
+  const ruleSeverity = normalizeRule(rules?.severity);
+  const aiSeverity = normalizeAI(ai?.riskLevel);
+
+  // ========================================
+  // 🔥 FUSION LOGIC (SAFE)
+  // ========================================
 
   let finalSeverity = "LOW";
 
@@ -61,7 +75,7 @@ export async function evaluateEncounter(encounterData = {}) {
   }
 
   // ========================================
-  // ⚠️ DISAGREEMENT TRACKING (IMPORTANT)
+  // ⚠️ DISAGREEMENT TRACKING
   // ========================================
 
   const disagreement =
@@ -73,14 +87,14 @@ export async function evaluateEncounter(encounterData = {}) {
       : null;
 
   // ========================================
-  // 🚨 ESCALATION LOGIC (FOR NURSE ENGINE)
+  // 🚨 ESCALATION
   // ========================================
 
   const escalation =
     finalSeverity === "HIGH" || finalSeverity === "CRITICAL";
 
   // ========================================
-  // 📦 RETURN (ALIGNED WITH NURSE ENGINE)
+  // 📦 RETURN
   // ========================================
 
   return {
