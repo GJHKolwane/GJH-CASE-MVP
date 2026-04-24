@@ -295,7 +295,7 @@ export const addVitalsHandler = async (req, res) => {
     record.encounter_data = record.encounter_data || {};
 
     // 🔐 GOVERNANCE (UPGRADED: FULL RECORD)
-    assertValidTransition(record, "vitals_recorded");
+    assertValidTransition(record.status, "vitals_recorded");
 
     // 🧾 HISTORY (AUDIT)
     const updatedEncounterData = appendStateHistory(
