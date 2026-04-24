@@ -211,11 +211,12 @@ export const intakeHandler = async (req, res) => {
       "system"
     );
 
-    record.encounter_data = {
-      ...updatedEncounterData,
-      intake: req.body.intake || {}
-    };
-
+    // 🧠 PRESERVE EXISTING DATA
+record.encounter_data = {
+  ...record.encounter_data,
+  ...updatedEncounterData,
+  intake: req.body.intake || {}
+};
     record.status = "intake";
 
     record.timeline.push({
