@@ -365,7 +365,7 @@ export const addSymptomsHandler = async (req, res) => {
     record.encounter_data = record.encounter_data || {};
 
     // 🔐 GOVERNANCE (UPGRADED: FULL RECORD)
-    assertValidTransition(record, "symptoms_recorded");
+    assertValidTransition(record.status, "symptoms_recorded");
 
     // 🧾 HISTORY (AUDIT)
     const updatedEncounterData = appendStateHistory(
