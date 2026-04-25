@@ -212,10 +212,22 @@ export const intakeHandler = async (req, res) => {
     );
 
     // 🧠 PRESERVE EXISTING DATA
+
+    const intake = req.body.intake || {};
+
 record.encounter_data = {
   ...record.encounter_data,
   ...updatedEncounterData,
-  intake: req.body.intake || {}
+  intake: {
+    age: intake?.patient?.age ?? null,
+    sex: intake?.patient?.sex ?? null,
+    pregnant: intake?.medical?.pregnant ?? false,
+    immunocompromised: intake?.medical?.immunocompromised ?? false,
+    chronicConditions: intake?.medical?.conditions ?? [],
+    allergies: intake?.medical?.allergies ?? [],
+    medications: intake?.medical?.medications ?? [],
+    notes: intake?.notes ?? ""
+  }
 };
     record.status = "intake";
 
