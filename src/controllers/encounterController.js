@@ -369,6 +369,7 @@ SYMPTOMS + AI + DECISION
 ================================================
 */
 
+
 export const addSymptomsHandler = async (req, res) => {
   try {
     const { id } = req.params;
@@ -381,15 +382,14 @@ export const addSymptomsHandler = async (req, res) => {
       return res.status(404).json({ error: "Not found" });
     }
 
-    // 🔥 NEW: STRUCTURE GUARD (SAFE INSERT — NOTHING REMOVED)
+    // 🔥 STRUCTURE GUARD
     record = ensureEncounterStructure(record);
-
     record.encounter_data = record.encounter_data || {};
 
-    // 🔐 GOVERNANCE (UPGRADED: FULL RECORD)
+    // 🔐 GOVERNANCE
     assertValidTransition(record.status, "symptoms_recorded");
 
-    // 🧾 HISTORY (AUDIT)
+    // 🧾 HISTORY
     const updatedEncounterData = appendStateHistory(
       record,
       record.status,
@@ -397,57 +397,150 @@ export const addSymptomsHandler = async (req, res) => {
       "system"
     );
 
-    // 🧠 NORMALIZE INPUT
+    // 🧠 NORMALIZE SYMPTOMS INPUT
     const symptoms =
       typeof req.body.symptoms === "string"
-        ? req.body.symptoms.split(",").map(s => s.trim())
-        : req.body.symptoms || [];
+        ? req.body.symptoms.split(",").map((s) => s.trim()).filter(Boolean)
+        : Array.isArray(req.body.symptoms)
+        ? req.body.symptoms
+        : [];
 
-    // 🤖 AI (assistive only)
+    const ed = record.encounter_data || {};
+
+    /*
+    ========================================
+    🔥 NORMALIZE INTAKE (CRITICAL FIX)
+    ========================================
+    */
+    const normalizedIntake = {
+      patient: {
+        age: ed.intake?.patient?.age ?? ed.intake?.age ?? null,
+        sex: ed.intake?.patient?.sex ?? ed.intake?.sex ?? null
+      },
+      medical: {
+        conditions:
+          ed.intake?.medical?.conditions ??
+          ed.intake?.chronicConditions ??
+          [],
+        allergies: ed.intake?.medical?.allergies ?? [],
+        medications: ed.intake?.medical?.medications ?? []
+      },
+      context: {
+        pregnant:
+          ed.intake?.context?.pregnant ??
+          ed.intake?.pregnant ??
+          false,
+        immunocompromised:
+          ed.intake?.context?.immunocompromised ??
+          ed.intake?.immunocompromised ??
+          false
+      }
+    };
+
+    /*
+    ========================================
+    🔥 NORMALIZE VITALS (CRITICAL FIX)
+    ========================================
+    */
+    const normalizedVitals = {
+      heartRate:
+        ed.vitals?.heartRate ??
+        ed.vitals?.heart_rate ??
+        null,
+
+      temperature:
+        ed.vitals?.temperature ?? null,
+
+      bloodPressure:
+        ed.vitals?.bloodPressure ??
+        ed.vitals?.blood_pressure ??
+        null,
+
+      oxygenSaturation:
+        ed.vitals?.oxygenSaturation ??
+        ed.vitals?.spo2 ??
+        null
+    };
+
+    /*
+    ========================================
+    🤖 AI CALL (SAFE)
+    ========================================
+    */
     let ai = null;
+
     try {
       ai = await callAIOrchestrator({
         inputText: symptoms.join(", "),
-        vitals: record.encounter_data.vitals || {},
+        vitals: normalizedVitals,
         symptoms
       });
-    } catch {
+    } catch (err) {
+      console.warn("⚠️ AI failed, continuing without AI:", err.message);
       ai = null;
     }
 
-    // 🧠 DECISION (PRIMARY AUTHORITY)
-    const decision = await evaluateEncounter({
-      ...record.encounter_data,
+    /*
+    ========================================
+    🧠 DECISION ENGINE (FIXED INPUT)
+    ========================================
+    */
+    const decisionInput = {
+      intake: normalizedIntake,
+      vitals: normalizedVitals,
       symptoms,
       ai
-    });
+    };
 
-    // 💾 SAFE MERGE (NO DATA LOSS — YOUR ORIGINAL LOGIC KEPT)
-    
-     record.encounter_data = {
-  ...record.encounter_data,   // 🔥 KEEP EVERYTHING
-  ...updatedEncounterData,
-  symptoms,
-  ai,
-  decision,
-  finalSeverity: decision.finalSeverity
-};
+    const decision = await evaluateEncounter(decisionInput);
 
-    // 🔄 STATE UPDATE
+    /*
+    ========================================
+    💾 SAFE MERGE (NO DATA LOSS)
+    ========================================
+    */
+    record.encounter_data = {
+      ...record.encounter_data,     // 🔥 KEEP EVERYTHING
+      ...updatedEncounterData,
+      symptoms,
+      ai,
+      decision,
+      finalSeverity: decision?.finalSeverity ?? null
+    };
+
+    /*
+    ========================================
+    🔄 STATE UPDATE
+    ========================================
+    */
     record.status = "symptoms_recorded";
 
-    // 🕒 TIMELINE
+    /*
+    ========================================
+    🕒 TIMELINE
+    ========================================
+    */
     record.timeline.push({
       event: "🧠 Symptoms processed + decision generated",
       timestamp: new Date().toISOString()
     });
 
+    /*
+    ========================================
+    💾 SAVE
+    ========================================
+    */
     const updated = await updateEncounterDB(
       id,
       cleanBeforeSave(record),
       record.status
     );
 
+    /*
+    ========================================
+    ✅ RESPONSE
+    ========================================
+    */
     res.json({
       status: updated.status,
       encounter: sanitizeResponse(updated),
@@ -455,6 +548,7 @@ export const addSymptomsHandler = async (req, res) => {
     });
 
   } catch (err) {
+    console.error("🔥 SYMPTOMS HANDLER ERROR:", err);
     res.status(500).json({ error: err.message });
   }
 };
