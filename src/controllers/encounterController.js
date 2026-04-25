@@ -218,9 +218,10 @@ export const intakeHandler = async (req, res) => {
 record.encounter_data = {
   ...record.encounter_data,
 
-  history: updatedEncounterData.history
+  // ✅ ONLY history from state system
+  history: updatedEncounterData.history,
 
-    
+  // ✅ intake MUST be INSIDE the object
   intake: {
     age: intake?.patient?.age ?? null,
     sex: intake?.patient?.sex ?? null,
