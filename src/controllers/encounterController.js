@@ -217,7 +217,10 @@ export const intakeHandler = async (req, res) => {
 
 record.encounter_data = {
   ...record.encounter_data,
-  ...updatedEncounterData,
+
+  history: updatedEncounterData.history
+
+    
   intake: {
     age: intake?.patient?.age ?? null,
     sex: intake?.patient?.sex ?? null,
@@ -324,7 +327,9 @@ export const addVitalsHandler = async (req, res) => {
 
 record.encounter_data = {
   ...record.encounter_data,
-  ...updatedEncounterData,
+
+  history: updatedEncounterData.history
+
   vitals: {
     heart_rate: Number(v.heartRate) || null,
     temperature: Number(v.temperature) || null,
