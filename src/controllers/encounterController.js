@@ -320,14 +320,16 @@ export const addVitalsHandler = async (req, res) => {
 
     // 🧠 BUSINESS LOGIC
 
-    record.encounter_data = {
-  ...record.encounter_data,   // 🔥 KEEP INTAKE
+    const v = req.body.vitals || {};
+
+record.encounter_data = {
+  ...record.encounter_data,
   ...updatedEncounterData,
   vitals: {
-    heart_rate: Number(req.body.heartRate) || null,
-    temperature: Number(req.body.temperature) || null,
-    blood_pressure: req.body.bloodPressure || null,
-    spo2: Number(req.body.oxygenSaturation) || null
+    heart_rate: Number(v.heartRate) || null,
+    temperature: Number(v.temperature) || null,
+    blood_pressure: v.bloodPressure || null,
+    spo2: Number(v.oxygenSaturation) || null
   }
 };
 
