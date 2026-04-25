@@ -328,8 +328,7 @@ export const addVitalsHandler = async (req, res) => {
 
 record.encounter_data = {
   ...record.encounter_data,
-
-  history: updatedEncounterData.history
+  history: updatedEncounterData.history,
 
   vitals: {
     heart_rate: Number(v.heartRate) || null,
