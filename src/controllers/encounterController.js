@@ -505,7 +505,11 @@ export const addSymptomsHandler = async (req, res) => {
       symptoms,
       ai,
       decision,
-      finalSeverity: decision?.finalSeverity ?? null
+      finalSeverity:
+  decision?.finalSeverity ||
+  decision?.severity ||
+  decision?.riskLevel ||
+  "UNKNOWN"
     };
 
     /*
