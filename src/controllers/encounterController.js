@@ -126,22 +126,7 @@ export const createEncounterHandler = async (req, res) => {
       [patientId, name, nationalId]
     );
 
-    const normalized = {
-      patient_id: patientId,
-      name,
-      national_id: nationalId,
-      care_mode: body.care_mode || "facility",
-      status: "created",
-      timeline: [
-        {
-          event: "🆕 Encounter created",
-          timestamp: now
-        }
-      ]
-    };
-
-
-
+  
     // ===============================
     // 🔥 PATIENT RESOLUTION (NEW)
     // ===============================
@@ -154,11 +139,13 @@ export const createEncounterHandler = async (req, res) => {
     // ===============================
     // 🔥 NORMALIZE PAYLOAD
     // ===============================
-    const normalized = {
-      ...req.body,
-      patient_id: patient.id // 🔑 SINGLE SOURCE OF TRUTH
-    };
 
+    const { name, national_id, isTemporary, ...rest } = req.body;
+
+const normalized = {
+  ...rest,
+  patient_id: patient.id
+};
     // ===============================
     // 🔥 CREATE ENCOUNTER
     // ===============================
