@@ -238,14 +238,18 @@ export const intakeHandler = async (req, res) => {
     // 🔥 STRUCTURE ENFORCEMENT
     // ===============================
 
-    const current = record.encounter_data || {};
 
-    record.encounter_data = {
-      history: updatedEncounterData.history,
-      intake,
-      vitals: current.vitals || null,
-      decision: current.decision || null
-    };
+    record.encounter_data = record.encounter_data || {};
+
+// ✅ ONLY write intake
+record.encounter_data.intake = intake;
+
+// ✅ update history only
+record.encounter_data.history = updatedEncounterData.history;
+
+// 🔥 CLEAN LEGACY GARBAGE
+delete record.encounter_data.encounter_data;
+delete record.encounter_data.ai;
 
     // 🔄 State
     record.status = "intake";
