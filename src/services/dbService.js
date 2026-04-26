@@ -10,11 +10,11 @@ HELPERS
 */
 
 function isUUID(id) {
-  return /^[0-9a-f-]{36}$/i.test(id);
-}
+  if (!id || typeof id !== "string") return false;
 
-function ensureObject(data) {
-  return data && typeof data === "object" ? data : {};
+  const clean = id.trim();
+
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clean);
 }
 
 /*
