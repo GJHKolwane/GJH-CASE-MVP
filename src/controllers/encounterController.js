@@ -140,8 +140,7 @@ export const createEncounterHandler = async (req, res) => {
     // 🔥 NORMALIZE PAYLOAD
     // ===============================
 
-    const { name, national_id, isTemporary, ...rest } = req.body;
-
+    
 const normalized = {
   ...rest,
   patient_id: patient.id
