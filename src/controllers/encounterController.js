@@ -317,7 +317,6 @@ export const getEncounterTimelineHandler = async (req, res) => {
 VITALS
 ================================================
 */
-
 export const addVitalsHandler = async (req, res) => {
   try {
     const { id } = req.params;
@@ -352,27 +351,19 @@ export const addVitalsHandler = async (req, res) => {
     VitalsSchema.parse(vitals);
 
     // ===============================
-    // 🔥 STRUCTURE FIX (CRITICAL)
+    // 🔥 CLEAN STAGE WRITE (CORE FIX)
     // ===============================
 
-    // Pull from BOTH structures
-    const legacy = record.encounter_data?.encounter_data || {};
-    const current = record.encounter_data || {};
+    const previous = record.encounter_data || {};
 
-    const merged = {
-      ...legacy,
-      ...current,
-      vitals
-    };
-
-    // 🔥 WRITE CLEAN (FLAT STRUCTURE ONLY)
     record.encounter_data = {
-      ...record.encounter_data,
-      history: updatedEncounterData.history,
-      intake: merged.intake || null,
-      vitals: merged.vitals,
-      decision: merged.decision || {}
+      ...previous,                 // ✅ preserve intake + patient
+      vitals,                     // ✅ ONLY new data
+      history: updatedEncounterData.history
     };
+
+    // 🔥 Remove any nested garbage (safety)
+    delete record.encounter_data.encounter_data;
 
     // 🔄 State update
     record.status = "vitals_recorded";
