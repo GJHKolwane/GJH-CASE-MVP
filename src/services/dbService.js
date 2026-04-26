@@ -17,6 +17,11 @@ function isUUID(id) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clean);
 }
 
+function ensureObject(data) {
+  if (!data || typeof data !== "object") return {};
+  return data;
+}
+
 /*
 ================================================
 🧼 SANITIZER (MINIMAL + SAFE)
@@ -25,7 +30,6 @@ function isUUID(id) {
 function sanitizeEncounterData(data) {
   const clean = ensureObject(data);
 
-  // ensure history always exists
   if (!Array.isArray(clean.history)) {
     clean.history = [];
   }
@@ -40,9 +44,10 @@ CREATE (LEAN + STAGE-READY)
 */
 export async function createEncounterDB(payload) {
   try {
-    const id = isUUID(payload.id) ? payload.id : uuidv4();
+    const id = isUUID(payload.id) ? payload.id.trim() : uuidv4();
+
     const patientId = isUUID(payload.patient_id)
-      ? payload.patient_id
+      ? payload.patient_id.trim()
       : uuidv4();
 
     const name =
@@ -55,7 +60,6 @@ export async function createEncounterDB(payload) {
       payload.patient_data?.national_id ||
       null;
 
-    // ✅ ONLY WHAT EXISTS NOW
     const encounter_data = sanitizeEncounterData({
       patient: {
         id: patientId,
@@ -102,6 +106,8 @@ GET
 */
 export async function getEncounterDB(id) {
   try {
+    id = id?.trim();
+
     if (!isUUID(id)) throw new Error("Invalid UUID");
 
     const res = await query(
@@ -128,6 +134,8 @@ UPDATE (STAGE MERGE ENGINE)
 */
 export async function updateEncounterDB(id, incomingData, newStatus) {
   try {
+    id = id?.trim();
+
     if (!isUUID(id)) throw new Error("Invalid UUID");
 
     const existing = await getEncounterDB(id);
@@ -135,7 +143,7 @@ export async function updateEncounterDB(id, incomingData, newStatus) {
     const existingData = ensureObject(existing.encounter_data);
     const incoming = ensureObject(incomingData);
 
-    // 🔥 CORE MERGE RULE
+    // 🔥 STAGE MERGE (shallow for now)
     const merged = {
       ...existingData,
       ...incoming
@@ -163,6 +171,10 @@ export async function updateEncounterDB(id, incomingData, newStatus) {
       ]
     );
 
+    if (!res.rows[0]) {
+      throw new Error("Update failed");
+    }
+
     return sanitizeEncounterData(res.rows[0]);
 
   } catch (err) {
@@ -173,11 +185,13 @@ export async function updateEncounterDB(id, incomingData, newStatus) {
 
 /*
 ================================================
-PATCH (OPTIONAL - KEEP SIMPLE)
+PATCH (OPTIONAL)
 ================================================
 */
 export async function patchEncounterField(id, field, value) {
   try {
+    id = id?.trim();
+
     if (!isUUID(id)) throw new Error("Invalid UUID");
 
     const res = await query(
@@ -200,6 +214,10 @@ export async function patchEncounterField(id, field, value) {
       ]
     );
 
+    if (!res.rows[0]) {
+      throw new Error("Patch failed");
+    }
+
     return sanitizeEncounterData(res.rows[0]);
 
   } catch (err) {
@@ -215,6 +233,8 @@ DELETE
 */
 export async function deleteEncounterDB(id) {
   try {
+    id = id?.trim();
+
     if (!isUUID(id)) throw new Error("Invalid UUID");
 
     const res = await query(
