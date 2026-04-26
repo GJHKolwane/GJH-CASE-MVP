@@ -31,15 +31,20 @@ function ensureObject(data) {
 function sanitizeEncounterData(data) {
   const clean = ensureObject(data);
 
-  // ❌ Remove root-level history (causes duplication)
+  // ❌ Remove root-level history
   if (clean.history) {
     delete clean.history;
   }
 
-  // ✅ Ensure encounter_data exists
+  // 🔥 CRITICAL FIX: prevent nested encounter_data
+  if (clean.encounter_data?.encounter_data) {
+    clean.encounter_data = clean.encounter_data.encounter_data;
+  }
+
+  // ensure encounter_data exists
   clean.encounter_data = ensureObject(clean.encounter_data);
 
-  // ✅ Ensure history lives ONLY here
+  // ensure history ONLY inside encounter_data
   if (!Array.isArray(clean.encounter_data.history)) {
     clean.encounter_data.history = [];
   }
