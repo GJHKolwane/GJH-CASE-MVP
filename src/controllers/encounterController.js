@@ -16,6 +16,15 @@ import { appendStateHistory } from "../services/governance/stateHistory.js";
 import { evaluateEncounter } from "../services/clinicalDecision.service.js";
 import { callAIOrchestrator } from "../services/aiOrchestrator.client.js";
 
+import { normalizeIntake } from "../../../gjh-contracts/normalizers/normalizeIntake.js";
+import { normalizeVitals } from "../../../gjh-contracts/normalizers/normalizeVitals.js";
+import { standardizeDecision } from "../../../gjh-contracts/normalizers/standardizeDecision.js";
+
+import { IntakeSchema } from "../../../gjh-contracts/validators/intake.validator.js";
+import { VitalsSchema } from "../../../gjh-contracts/validators/vitals.validator.js";
+import { DecisionSchema } from "../../../gjh-contracts/validators/decision.validator.js";
+
+
 /*
 ================================================
 🔥 GLOBAL STRUCTURE GUARD (CORE FIX)
