@@ -157,7 +157,7 @@ const normalized = {
       encounter: sanitizeResponse(encounter)
     });
 
-   catch (err) {
+  } catch (err) {
     console.error("🔥 CREATE ERROR:", err);
     res.status(500).json({ error: err.message });
   }
