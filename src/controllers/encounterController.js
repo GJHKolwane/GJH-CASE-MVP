@@ -232,6 +232,8 @@ export const intakeHandler = async (req, res) => {
     const intake = normalizeFHIRIntake(raw);
     FHIRIntakeSchema.parse(intake);
 
+    console.log("FHIRIntakeSchema import:", FHIRIntakeSchema);
+
     // ===============================
     // 🔥 STRUCTURE ENFORCEMENT
     // ===============================
