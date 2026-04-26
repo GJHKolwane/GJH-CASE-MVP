@@ -398,8 +398,6 @@ export const addVitalsHandler = async (req, res) => {
 SYMPTOMS + AI + DECISION
 ================================================
 */
-
-
 export const addSymptomsHandler = async (req, res) => {
   try {
     const { id } = req.params;
@@ -414,7 +412,6 @@ export const addSymptomsHandler = async (req, res) => {
 
     // 🔥 STRUCTURE GUARD
     record = ensureEncounterStructure(record);
-    record.encounter_data = record.encounter_data || {};
 
     // 🔐 GOVERNANCE
     assertValidTransition(record.status, "symptoms_recorded");
@@ -427,7 +424,9 @@ export const addSymptomsHandler = async (req, res) => {
       "system"
     );
 
+    // ===============================
     // 🧠 NORMALIZE SYMPTOMS INPUT
+    // ===============================
     const symptoms =
       typeof req.body.symptoms === "string"
         ? req.body.symptoms.split(",").map((s) => s.trim()).filter(Boolean)
@@ -439,7 +438,7 @@ export const addSymptomsHandler = async (req, res) => {
 
     /*
     ========================================
-    🔥 NORMALIZE INTAKE (CRITICAL FIX)
+    🔥 NORMALIZE INTAKE
     ========================================
     */
     const normalizedIntake = {
@@ -469,7 +468,7 @@ export const addSymptomsHandler = async (req, res) => {
 
     /*
     ========================================
-    🔥 NORMALIZE VITALS (CRITICAL FIX)
+    🔥 NORMALIZE VITALS
     ========================================
     */
     const normalizedVitals = {
@@ -494,7 +493,7 @@ export const addSymptomsHandler = async (req, res) => {
 
     /*
     ========================================
-    🤖 AI CALL (SAFE)
+    🤖 AI CALL
     ========================================
     */
     let ai = null;
@@ -512,7 +511,7 @@ export const addSymptomsHandler = async (req, res) => {
 
     /*
     ========================================
-    🧠 DECISION ENGINE (FIXED INPUT)
+    🧠 DECISION ENGINE
     ========================================
     */
     const decisionInput = {
@@ -526,21 +525,26 @@ export const addSymptomsHandler = async (req, res) => {
 
     /*
     ========================================
-    💾 SAFE MERGE (NO DATA LOSS)
+    🔥 CLEAN STAGE WRITE (CORE FIX)
     ========================================
     */
+    const previous = record.encounter_data || {};
+
     record.encounter_data = {
-      ...record.encounter_data,     // 🔥 KEEP EVERYTHING
-      ...updatedEncounterData,
-      symptoms,
+      ...previous, // ✅ preserve patient, intake, vitals
+      symptoms,    // ✅ current stage data
       ai,
       decision,
       finalSeverity:
-  decision?.finalSeverity ||
-  decision?.severity ||
-  decision?.riskLevel ||
-  "UNKNOWN"
+        decision?.finalSeverity ||
+        decision?.severity ||
+        decision?.riskLevel ||
+        "UNKNOWN",
+      history: updatedEncounterData.history
     };
+
+    // 🔥 Remove nested garbage if any
+    delete record.encounter_data.encounter_data;
 
     /*
     ========================================
@@ -586,6 +590,7 @@ export const addSymptomsHandler = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
 
 /*
 ================================================
