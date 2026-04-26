@@ -200,6 +200,7 @@ export const getEncounterHandler = async (req, res) => {
 INTAKE (🔥 FIXED)
 ================================================
 */
+
 export const intakeHandler = async (req, res) => {
   try {
     const { id } = req.params;
@@ -207,12 +208,17 @@ export const intakeHandler = async (req, res) => {
     trace("intake", id);
 
     let record = await getEncounterDB(id);
-    if (!record) return res.status(404).json({ error: "Not found" });
+    if (!record) {
+      return res.status(404).json({ error: "Not found" });
+    }
 
+    // 🔒 Ensure structure
     record = ensureEncounterStructure(record);
 
+    // 🔐 Governance
     assertValidTransition(record.status, "intake");
 
+    // 🧾 History
     const updatedEncounterData = appendStateHistory(
       record,
       record.status,
@@ -220,81 +226,58 @@ export const intakeHandler = async (req, res) => {
       "system"
     );
 
-    // 🧠 PRESERVE EXISTING DATA
+    // ===============================
+    // 🔥 CONTRACT PIPELINE START
+    // ===============================
 
-    const intake = req.body.intake || {};
+    const rawIntake = req.body.intake || {};
 
-record.encounter_data = {
-  ...record.encounter_data,
+    // Normalize
+    const intake = normalizeIntake(rawIntake);
 
-  // ✅ ONLY history from state system
-  history: updatedEncounterData.history,
+    // Validate (FAIL FAST if invalid)
+    IntakeSchema.parse(intake);
 
-  // ✅ intake MUST be INSIDE the object
-  intake: {
-    age: intake?.patient?.age ?? null,
-    sex: intake?.patient?.sex ?? null,
-    pregnant: intake?.medical?.pregnant ?? false,
-    immunocompromised: intake?.medical?.immunocompromised ?? false,
-    chronicConditions: intake?.medical?.conditions ?? [],
-    allergies: intake?.medical?.allergies ?? [],
-    medications: intake?.medical?.medications ?? [],
-    notes: intake?.notes ?? ""
-  }
-};
+    // ===============================
+    // 🔥 CONTRACT PIPELINE END
+    // ===============================
+
+    // 💾 Save ONLY canonical structure
+    record.encounter_data = {
+      ...record.encounter_data,
+      history: updatedEncounterData.history,
+      intake
+    };
+
+    // 🔄 State update
     record.status = "intake";
 
+    // 🕒 Timeline
     record.timeline.push({
       event: "📝 Intake captured",
       timestamp: new Date().toISOString()
     });
 
+    // 💾 Persist
     const updated = await updateEncounterDB(
       id,
       cleanBeforeSave(record),
       record.status
     );
 
+    // 📤 Response
     res.json({
       status: updated.status,
       encounter: sanitizeResponse(updated)
     });
 
   } catch (err) {
+    console.error("🔥 INTAKE ERROR:", err);
     res.status(400).json({ error: err.message });
   }
 };
 
-/*
-================================================
-TIMELINE (SAFE + ALIGNED)
-================================================
-*/
-export const getEncounterTimelineHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    let record = await getEncounterDB(id);
-
-    if (!record) {
-      return res.status(404).json({ error: "Not found" });
-    }
-
-    // 🔥 Ensure structure (prevents undefined timeline)
-    record = ensureEncounterStructure(record);
-
-    res.json({
-      timeline: record.timeline || []
-    });
-
-  } catch (err) {
-    console.error("🔥 TIMELINE ERROR:", err);
-
-    res.status(500).json({
-      error: err.message
-    });
-  }
-};
+    
 
 /*
 ================================================
