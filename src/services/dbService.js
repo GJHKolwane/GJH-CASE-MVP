@@ -24,10 +24,9 @@ function ensureObject(data) {
 
 /*
 ================================================
-🧼 SANITIZER (MINIMAL + SAFE)
+🧼 SANITIZER (STRICT + SAFE)
 ================================================
 */
-
 function sanitizeEncounterData(data) {
   const clean = ensureObject(data);
 
@@ -36,15 +35,17 @@ function sanitizeEncounterData(data) {
     delete clean.history;
   }
 
-  // 🔥 CRITICAL FIX: prevent nested encounter_data
+  // 🔥 Prevent nested encounter_data
   if (clean.encounter_data?.encounter_data) {
     clean.encounter_data = clean.encounter_data.encounter_data;
   }
 
-  // ensure encounter_data exists
-  clean.encounter_data = ensureObject(clean.encounter_data);
+  // ✅ Ensure encounter_data exists
+  if (!clean.encounter_data || typeof clean.encounter_data !== "object") {
+    clean.encounter_data = {};
+  }
 
-  // ensure history ONLY inside encounter_data
+  // ✅ Ensure history ONLY inside encounter_data
   if (!Array.isArray(clean.encounter_data.history)) {
     clean.encounter_data.history = [];
   }
@@ -54,16 +55,19 @@ function sanitizeEncounterData(data) {
 
 /*
 ================================================
-CREATE (LEAN + STAGE-READY)
+CREATE (STRICT + STAGE-ALIGNED)
 ================================================
 */
 export async function createEncounterDB(payload) {
   try {
     const id = isUUID(payload.id) ? payload.id.trim() : uuidv4();
 
-    const patientId = isUUID(payload.patient_id)
-      ? payload.patient_id.trim()
-      : uuidv4();
+    // 🔥 STRICT: patient_id must come from PatientService
+    if (!payload.patient_id || !isUUID(payload.patient_id)) {
+      throw new Error("Valid patient_id required");
+    }
+
+    const patientId = payload.patient_id.trim();
 
     const name =
       payload.name ||
@@ -144,7 +148,7 @@ export async function getEncounterDB(id) {
 
 /*
 ================================================
-UPDATE (STAGE MERGE ENGINE)
+UPDATE (STAGE MERGE ONLY)
 ================================================
 */
 export async function updateEncounterDB(id, incomingData, newStatus) {
@@ -156,9 +160,13 @@ export async function updateEncounterDB(id, incomingData, newStatus) {
     const existing = await getEncounterDB(id);
 
     const existingData = ensureObject(existing.encounter_data);
-    const incoming = ensureObject(incomingData);
 
-    // 🔥 STAGE MERGE (shallow for now)
+    // 🔥 ONLY accept encounter_data payload
+    const incoming = ensureObject(
+      incomingData.encounter_data || incomingData
+    );
+
+    // 🔥 STAGE MERGE
     const merged = {
       ...existingData,
       ...incoming
@@ -170,7 +178,9 @@ export async function updateEncounterDB(id, incomingData, newStatus) {
       ...(incoming.history || [])
     ];
 
-    const clean = sanitizeEncounterData(merged);
+    const clean = sanitizeEncounterData({
+      encounter_data: merged
+    });
 
     const res = await query(
       `UPDATE encounters 
@@ -180,7 +190,7 @@ export async function updateEncounterDB(id, incomingData, newStatus) {
        WHERE id = $3::uuid
        RETURNING *`,
       [
-        clean,
+        clean.encounter_data,
         newStatus || existing.status,
         id
       ]
