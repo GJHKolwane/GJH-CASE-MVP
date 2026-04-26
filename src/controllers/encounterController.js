@@ -284,7 +284,6 @@ export const intakeHandler = async (req, res) => {
 VITALS
 ================================================
 */
-
 export const addVitalsHandler = async (req, res) => {
   try {
     const { id } = req.params;
@@ -297,16 +296,13 @@ export const addVitalsHandler = async (req, res) => {
       return res.status(404).json({ error: "Not found" });
     }
 
-    // 🔥 NEW: STRUCTURE GUARD (SAFE INSERT)
+    // 🔒 Ensure structure
     record = ensureEncounterStructure(record);
 
-    // (kept as requested — no deletion)
-    record.encounter_data = record.encounter_data || {};
-
-    // 🔐 GOVERNANCE (UPGRADED: FULL RECORD)
+    // 🔐 Governance
     assertValidTransition(record.status, "vitals_recorded");
 
-    // 🧾 HISTORY (AUDIT)
+    // 🧾 History
     const updatedEncounterData = appendStateHistory(
       record,
       record.status,
@@ -314,43 +310,53 @@ export const addVitalsHandler = async (req, res) => {
       "system"
     );
 
-    // 🧠 BUSINESS LOGIC
+    // ===============================
+    // 🔥 CONTRACT PIPELINE START
+    // ===============================
 
-    const v = req.body.vitals || {};
+    const rawVitals = req.body.vitals || {};
 
-record.encounter_data = {
-  ...record.encounter_data,
-  history: updatedEncounterData.history,
+    // Normalize
+    const vitals = normalizeVitals(rawVitals);
 
-  vitals: {
-    heart_rate: Number(v.heartRate) || null,
-    temperature: Number(v.temperature) || null,
-    blood_pressure: v.bloodPressure || null,
-    spo2: Number(v.oxygenSaturation) || null
-  }
-};
+    // Validate (FAIL FAST if invalid)
+    VitalsSchema.parse(vitals);
 
-    // 🔄 STATE UPDATE
+    // ===============================
+    // 🔥 CONTRACT PIPELINE END
+    // ===============================
+
+    // 💾 Save ONLY canonical structure
+    record.encounter_data = {
+      ...record.encounter_data,
+      history: updatedEncounterData.history,
+      vitals
+    };
+
+    // 🔄 State update
     record.status = "vitals_recorded";
 
-    // 🕒 TIMELINE
+    // 🕒 Timeline
     record.timeline.push({
       event: "🩺 Vitals recorded",
       timestamp: new Date().toISOString()
     });
 
+    // 💾 Persist
     const updated = await updateEncounterDB(
       id,
       cleanBeforeSave(record),
       record.status
     );
 
+    // 📤 Response
     res.json({
       status: updated.status,
       encounter: sanitizeResponse(updated)
     });
 
   } catch (err) {
+    console.error("🔥 VITALS ERROR:", err);
     res.status(400).json({ error: err.message });
   }
 };
