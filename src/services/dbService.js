@@ -27,11 +27,21 @@ function ensureObject(data) {
 🧼 SANITIZER (MINIMAL + SAFE)
 ================================================
 */
+
 function sanitizeEncounterData(data) {
   const clean = ensureObject(data);
 
-  if (!Array.isArray(clean.history)) {
-    clean.history = [];
+  // ❌ Remove root-level history (causes duplication)
+  if (clean.history) {
+    delete clean.history;
+  }
+
+  // ✅ Ensure encounter_data exists
+  clean.encounter_data = ensureObject(clean.encounter_data);
+
+  // ✅ Ensure history lives ONLY here
+  if (!Array.isArray(clean.encounter_data.history)) {
+    clean.encounter_data.history = [];
   }
 
   return clean;
