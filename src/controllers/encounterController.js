@@ -24,7 +24,7 @@ import { standardizeDecision } from "../../../gjh-contracts/normalizers/standard
 import { IntakeSchema } from "../../../gjh-contracts/validators/intake.validator.js";
 import { VitalsSchema } from "../../../gjh-contracts/validators/vitals.validator.js";
 import { DecisionSchema } from "../../../gjh-contracts/validators/decision.validator.js";
-
+import { FHIRIntakeSchema } from "../../../gjh-contracts/validators/fhirIntakeSchema.js";
 
 /*
 ================================================
