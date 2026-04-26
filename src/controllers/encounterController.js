@@ -212,13 +212,10 @@ export const intakeHandler = async (req, res) => {
       return res.status(404).json({ error: "Not found" });
     }
 
-    // 🔒 Ensure structure
     record = ensureEncounterStructure(record);
 
-    // 🔐 Governance
     assertValidTransition(record.status, "intake");
 
-    // 🧾 History
     const updatedEncounterData = appendStateHistory(
       record,
       record.status,
@@ -227,45 +224,49 @@ export const intakeHandler = async (req, res) => {
     );
 
     // ===============================
-    // 🔥 CONTRACT PIPELINE START
+    // 🔥 CONTRACT PIPELINE
     // ===============================
-
     const rawIntake = req.body.intake || {};
-
-    // Normalize
     const intake = normalizeIntake(rawIntake);
-
-    // Validate (FAIL FAST if invalid)
     IntakeSchema.parse(intake);
 
     // ===============================
-    // 🔥 CONTRACT PIPELINE END
+    // 🔥 STRUCTURE FIX (CRITICAL)
     // ===============================
 
-    // 💾 Save ONLY canonical structure
-    record.encounter_data = {
-      ...record.encounter_data,
-      history: updatedEncounterData.history,
+    // Pull from BOTH possible structures
+    const legacy = record.encounter_data?.encounter_data || {};
+    const current = record.encounter_data || {};
+
+    const merged = {
+      ...legacy,
+      ...current,
       intake
     };
 
-    // 🔄 State update
+    // 🔥 WRITE CLEAN (FLAT STRUCTURE ONLY)
+    record.encounter_data = {
+      ...record.encounter_data,
+      history: updatedEncounterData.history,
+      intake: merged.intake,
+      vitals: merged.vitals || null,
+      decision: merged.decision || {}
+    };
+
+    // 🔄 State
     record.status = "intake";
 
-    // 🕒 Timeline
     record.timeline.push({
       event: "📝 Intake captured",
       timestamp: new Date().toISOString()
     });
 
-    // 💾 Persist
     const updated = await updateEncounterDB(
       id,
       cleanBeforeSave(record),
       record.status
     );
 
-    // 📤 Response
     res.json({
       status: updated.status,
       encounter: sanitizeResponse(updated)
@@ -276,6 +277,7 @@ export const intakeHandler = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
+
 
 export const getEncounterTimelineHandler = async (req, res) => {
   try {
