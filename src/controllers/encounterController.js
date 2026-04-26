@@ -310,6 +310,7 @@ export const getEncounterTimelineHandler = async (req, res) => {
 VITALS
 ================================================
 */
+
 export const addVitalsHandler = async (req, res) => {
   try {
     const { id } = req.params;
@@ -337,26 +338,33 @@ export const addVitalsHandler = async (req, res) => {
     );
 
     // ===============================
-    // 🔥 CONTRACT PIPELINE START
+    // 🔥 CONTRACT PIPELINE
     // ===============================
-
     const rawVitals = req.body.vitals || {};
-
-    // Normalize
     const vitals = normalizeVitals(rawVitals);
-
-    // Validate (FAIL FAST if invalid)
     VitalsSchema.parse(vitals);
 
     // ===============================
-    // 🔥 CONTRACT PIPELINE END
+    // 🔥 STRUCTURE FIX (CRITICAL)
     // ===============================
 
-    // 💾 Save ONLY canonical structure
+    // Pull from BOTH structures
+    const legacy = record.encounter_data?.encounter_data || {};
+    const current = record.encounter_data || {};
+
+    const merged = {
+      ...legacy,
+      ...current,
+      vitals
+    };
+
+    // 🔥 WRITE CLEAN (FLAT STRUCTURE ONLY)
     record.encounter_data = {
       ...record.encounter_data,
       history: updatedEncounterData.history,
-      vitals
+      intake: merged.intake || null,
+      vitals: merged.vitals,
+      decision: merged.decision || {}
     };
 
     // 🔄 State update
