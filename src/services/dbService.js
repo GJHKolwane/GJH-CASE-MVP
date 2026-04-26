@@ -10,31 +10,24 @@ HELPERS
 */
 
 function isUUID(id) {
-  const uuidRegex =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-  return uuidRegex.test(id);
+  return /^[0-9a-f-]{36}$/i.test(id);
 }
 
 function ensureObject(data) {
-  if (!data || typeof data !== "object") return {};
-  return data;
+  return data && typeof data === "object" ? data : {};
 }
 
 /*
 ================================================
-🧼 SANITIZER (STORAGE FIREWALL)
+🧼 SANITIZER (MINIMAL + SAFE)
 ================================================
 */
 function sanitizeEncounterData(data) {
   const clean = ensureObject(data);
 
-  if (clean.encounter_data) {
-    delete clean.encounter_data.routing;
-    delete clean.encounter_data.escalation;
-
-    if (!Array.isArray(clean.encounter_data.history)) {
-      clean.encounter_data.history = [];
-    }
+  // ensure history always exists
+  if (!Array.isArray(clean.history)) {
+    clean.history = [];
   }
 
   return clean;
@@ -42,19 +35,16 @@ function sanitizeEncounterData(data) {
 
 /*
 ================================================
-CREATE (FULLY ALIGNED)
+CREATE (LEAN + STAGE-READY)
 ================================================
 */
 export async function createEncounterDB(payload) {
   try {
-    const id = payload.id && isUUID(payload.id) ? payload.id : uuidv4();
+    const id = isUUID(payload.id) ? payload.id : uuidv4();
+    const patientId = isUUID(payload.patient_id)
+      ? payload.patient_id
+      : uuidv4();
 
-    const patientId =
-      payload.patient_id && isUUID(payload.patient_id)
-        ? payload.patient_id
-        : uuidv4();
-
-    // ✅ CONTRACT ALIGNMENT
     const name =
       payload.name ||
       payload.patient_data?.name ||
@@ -65,30 +55,13 @@ export async function createEncounterDB(payload) {
       payload.patient_data?.national_id ||
       null;
 
-    const initialData = {
+    // ✅ ONLY WHAT EXISTS NOW
+    const encounter_data = sanitizeEncounterData({
       patient: {
         id: patientId,
         name,
         national_id: nationalId
       },
-
-      // 🔥 CORE CONTEXT
-      care_mode: payload.care_mode || "facility",
-      visibility: ["doctor"],
-
-      intake: null,
-      vitals: null,
-      symptoms: null,
-
-      ai: {},
-      decision: {},
-      validation: {},
-
-      nurseSession: {},
-      doctorSession: {},
-
-      appointment: null,
-
       history: [
         {
           from: null,
@@ -97,10 +70,6 @@ export async function createEncounterDB(payload) {
           timestamp: new Date().toISOString()
         }
       ]
-    };
-
-    const cleanData = sanitizeEncounterData({
-      encounter_data: initialData
     });
 
     const res = await query(
@@ -110,8 +79,8 @@ export async function createEncounterDB(payload) {
        RETURNING *`,
       [
         id,
-        cleanData.encounter_data,
-        payload.status || "created",
+        encounter_data,
+        "created",
         patientId,
         "system",
         null
@@ -133,9 +102,7 @@ GET
 */
 export async function getEncounterDB(id) {
   try {
-    if (!isUUID(id)) {
-      throw new Error("Invalid UUID provided to getEncounterDB");
-    }
+    if (!isUUID(id)) throw new Error("Invalid UUID");
 
     const res = await query(
       `SELECT * FROM encounters WHERE id = $1::uuid`,
@@ -156,34 +123,31 @@ export async function getEncounterDB(id) {
 
 /*
 ================================================
-UPDATE (SAFE MERGE)
+UPDATE (STAGE MERGE ENGINE)
 ================================================
 */
-export async function updateEncounterDB(id, data, status) {
+export async function updateEncounterDB(id, incomingData, newStatus) {
   try {
-    if (!isUUID(id)) {
-      throw new Error("Invalid UUID provided to updateEncounterDB");
-    }
+    if (!isUUID(id)) throw new Error("Invalid UUID");
 
     const existing = await getEncounterDB(id);
 
     const existingData = ensureObject(existing.encounter_data);
-    const incomingData = ensureObject(data);
+    const incoming = ensureObject(incomingData);
 
+    // 🔥 CORE MERGE RULE
     const merged = {
       ...existingData,
-      ...incomingData
+      ...incoming
     };
 
-    // 🔒 HISTORY (append only)
+    // 🔒 HISTORY = append only
     merged.history = [
       ...(existingData.history || []),
-      ...(incomingData.history || [])
+      ...(incoming.history || [])
     ];
 
-    const cleanData = sanitizeEncounterData({
-      encounter_data: merged
-    });
+    const clean = sanitizeEncounterData(merged);
 
     const res = await query(
       `UPDATE encounters 
@@ -193,16 +157,11 @@ export async function updateEncounterDB(id, data, status) {
        WHERE id = $3::uuid
        RETURNING *`,
       [
-        cleanData.encounter_data,
-        status || existing.status || "updated",
+        clean,
+        newStatus || existing.status,
         id
       ]
     );
-
-    if (res.rowCount === 0) {
-      console.warn("⚠️ UPDATE FAILED:", id);
-      return null;
-    }
 
     return sanitizeEncounterData(res.rows[0]);
 
@@ -214,16 +173,12 @@ export async function updateEncounterDB(id, data, status) {
 
 /*
 ================================================
-PATCH FIELD
+PATCH (OPTIONAL - KEEP SIMPLE)
 ================================================
 */
 export async function patchEncounterField(id, field, value) {
   try {
-    if (!isUUID(id)) {
-      throw new Error("Invalid UUID provided to patchEncounterField");
-    }
-
-    const cleanValue = sanitizeEncounterData(value);
+    if (!isUUID(id)) throw new Error("Invalid UUID");
 
     const res = await query(
       `
@@ -240,12 +195,10 @@ export async function patchEncounterField(id, field, value) {
       `,
       [
         `{${field}}`,
-        JSON.stringify(cleanValue),
+        JSON.stringify(value),
         id
       ]
     );
-
-    if (!res.rows[0]) return null;
 
     return sanitizeEncounterData(res.rows[0]);
 
@@ -262,9 +215,7 @@ DELETE
 */
 export async function deleteEncounterDB(id) {
   try {
-    if (!isUUID(id)) {
-      throw new Error("Invalid UUID provided to deleteEncounterDB");
-    }
+    if (!isUUID(id)) throw new Error("Invalid UUID");
 
     const res = await query(
       `DELETE FROM encounters WHERE id = $1::uuid RETURNING *`,
@@ -285,11 +236,5 @@ HEALTH CHECK
 ================================================
 */
 export async function checkDBConnection() {
-  try {
-    const res = await query("SELECT NOW()");
-    return res.rows[0];
-  } catch (err) {
-    console.error("❌ DB CONNECTION ERROR:", err);
-    throw err;
-  }
+  return await query("SELECT NOW()");
 }
