@@ -200,7 +200,6 @@ export const getEncounterHandler = async (req, res) => {
 INTAKE (🔥 FIXED)
 ================================================
 */
-
 export const intakeHandler = async (req, res) => {
   try {
     const { id } = req.params;
@@ -224,40 +223,32 @@ export const intakeHandler = async (req, res) => {
     );
 
     // ===============================
-    // 🔥 CONTRACT PIPELINE
-    // ===============================
-    const rawIntake = req.body.intake || {};
-    const intake = normalizeIntake(rawIntake);
-    IntakeSchema.parse(intake);
-
-    // ===============================
-    // 🔥 STRUCTURE FIX (CRITICAL)
+    // 🔥 FHIR CONTRACT PIPELINE
     // ===============================
 
-    // Pull from BOTH possible structures
-    const legacy = record.encounter_data?.encounter_data || {};
+    const raw = req.body.intake || {};
+
+    const intake = normalizeFHIRIntake(raw);
+    FHIRIntakeSchema.parse(intake);
+
+    // ===============================
+    // 🔥 STRUCTURE ENFORCEMENT
+    // ===============================
+
     const current = record.encounter_data || {};
 
-    const merged = {
-      ...legacy,
-      ...current,
-      intake
-    };
-
-    // 🔥 WRITE CLEAN (FLAT STRUCTURE ONLY)
     record.encounter_data = {
-      ...record.encounter_data,
       history: updatedEncounterData.history,
-      intake: merged.intake,
-      vitals: merged.vitals || null,
-      decision: merged.decision || {}
+      intake,
+      vitals: current.vitals || null,
+      decision: current.decision || null
     };
 
     // 🔄 State
     record.status = "intake";
 
     record.timeline.push({
-      event: "📝 Intake captured",
+      event: "📝 FHIR Intake captured",
       timestamp: new Date().toISOString()
     });
 
@@ -277,7 +268,6 @@ export const intakeHandler = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
-
 
 export const getEncounterTimelineHandler = async (req, res) => {
   try {
