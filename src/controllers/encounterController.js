@@ -15,6 +15,7 @@ import { appendStateHistory } from "../services/governance/stateHistory.js";
 
 import { evaluateEncounter } from "../services/clinicalDecision.service.js";
 import { callAIOrchestrator } from "../services/aiOrchestrator.client.js";
+import { resolvePatient } from "../services/patientService.js";
 
 
 import { normalizeFHIRIntake } from "../../../gjh-contracts/normalizers/normalizeIntake.js";
@@ -139,6 +140,28 @@ export const createEncounterHandler = async (req, res) => {
       ]
     };
 
+
+
+    // ===============================
+    // 🔥 PATIENT RESOLUTION (NEW)
+    // ===============================
+    const patient = await resolvePatient({
+      name: req.body.name,
+      national_id: req.body.national_id,
+      isTemporary: req.body.isTemporary
+    });
+
+    // ===============================
+    // 🔥 NORMALIZE PAYLOAD
+    // ===============================
+    const normalized = {
+      ...req.body,
+      patient_id: patient.id // 🔑 SINGLE SOURCE OF TRUTH
+    };
+
+    // ===============================
+    // 🔥 CREATE ENCOUNTER
+    // ===============================
     const encounter = await createEncounterDB(normalized);
 
     trace("create", encounter.id);
@@ -148,7 +171,7 @@ export const createEncounterHandler = async (req, res) => {
       encounter: sanitizeResponse(encounter)
     });
 
-  } catch (err) {
+   catch (err) {
     console.error("🔥 CREATE ERROR:", err);
     res.status(500).json({ error: err.message });
   }
