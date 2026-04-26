@@ -16,7 +16,8 @@ import { appendStateHistory } from "../services/governance/stateHistory.js";
 import { evaluateEncounter } from "../services/clinicalDecision.service.js";
 import { callAIOrchestrator } from "../services/aiOrchestrator.client.js";
 
-import { normalizeIntake } from "../../../gjh-contracts/normalizers/normalizeIntake.js";
+
+import { normalizeFHIRIntake } from "../gjh-contracts/normalizers/normalizeIntake.js";
 import { normalizeVitals } from "../../../gjh-contracts/normalizers/normalizeVitals.js";
 import { standardizeDecision } from "../../../gjh-contracts/normalizers/standardizeDecision.js";
 
