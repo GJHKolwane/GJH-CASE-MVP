@@ -107,6 +107,7 @@ const ensureDecision = async (record) => {
 CREATE
 ================================================
 */
+
 export const createEncounterHandler = async (req, res) => {
   try {
     const body = req.body || {};
@@ -126,25 +127,25 @@ export const createEncounterHandler = async (req, res) => {
       [patientId, name, nationalId]
     );
 
-  
     // ===============================
     // 🔥 PATIENT RESOLUTION (NEW)
     // ===============================
     const patient = await resolvePatient({
-      name: req.body.name,
-      national_id: req.body.national_id,
-      isTemporary: req.body.isTemporary
+      name: body.name,
+      national_id: body.national_id,
+      isTemporary: body.isTemporary
     });
 
     // ===============================
-    // 🔥 NORMALIZE PAYLOAD
+    // 🔥 NORMALIZE PAYLOAD (FIXED)
     // ===============================
+    const { name: _name, national_id: _nid, isTemporary: _tmp, ...rest } = body;
 
-    
-const normalized = {
-  ...rest,
-  patient_id: patient.id
-};
+    const normalized = {
+      ...rest,
+      patient_id: patient.id
+    };
+
     // ===============================
     // 🔥 CREATE ENCOUNTER
     // ===============================
